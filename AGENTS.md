@@ -9,6 +9,7 @@ This file is the working guide for any coding agent operating in this repository
 - Current UX:
   - Portrait dashboard (`240x320`) with current conditions + 3-day summary cards.
   - Night-friendly dark theme with reduced brightness at night.
+  - Touch tap toggles theme (`dark <-> light`) without leaving the current screen.
   - During refresh, existing weather data remains visible and only a small animated header indicator is shown.
 - Current data source strategy: BOM anonymous FTP XML feed (`ftp.bom.gov.au`) because BOM web endpoints are protected against scraping.
 
@@ -37,9 +38,13 @@ Reference: `HARDWARE_SPEC.md`
     - NTP time/date sync and display
     - Forecast parsing for daily rain/next 3 days
     - dark-mode palette and time-based backlight dimming
+    - touch IRQ edge-detect + debounce for theme toggle
     - integrated refresh spinner (no blank update screen)
 - `include/Config.h`
   - Runtime configuration: Wi-Fi credentials, BOM file path, station ID, refresh intervals.
+  - Includes touch-toggle settings:
+    - `TOUCH_IRQ_PIN` (default `36`)
+    - `TOUCH_TOGGLE_DEBOUNCE_MS` (default `400`)
 - `include/BomParser.h` + `src/BomParser.cpp`
   - Station XML parser used to extract weather values.
 - `include/FtpUtils.h` + `src/FtpUtils.cpp`
@@ -151,7 +156,8 @@ Current orientation in app:
 
 ## Known gaps / TODO
 
-- Verify actual touch controller IC and integration.
+- Verify actual touch controller IC and full coordinate reading integration.
+- Add optional calibration mode if moving from IRQ-only touch to full touch-point UI interactions.
 - Optional: switch to a more robust XML parser if feed structure changes.
 - Optional: add test coverage for forecast parsing logic (current tests focus on observation parsing/PASV).
 - Improve AM/PM rain split with a true higher-resolution source (currently marked as estimate `~`).
