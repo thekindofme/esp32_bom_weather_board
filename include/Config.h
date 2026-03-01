@@ -33,6 +33,14 @@
 #define BOM_STATION_ID "086282"  // Melbourne Airport
 #endif
 
+// Location forecast feed (used for rain range outlook)
+#ifndef BOM_FORECAST_FILE_PATH
+#define BOM_FORECAST_FILE_PATH "/anon/gen/fwo/IDV10753.xml"
+#endif
+#ifndef BOM_FORECAST_LOCATION
+#define BOM_FORECAST_LOCATION "Tullamarine"
+#endif
+
 // Polling cadence
 #ifndef WEATHER_REFRESH_MS
 #define WEATHER_REFRESH_MS (10UL * 60UL * 1000UL) // 10 minutes
@@ -42,4 +50,15 @@
 #endif
 #ifndef FTP_TIMEOUT_MS
 #define FTP_TIMEOUT_MS 15000UL
+#endif
+
+// Time sync
+#ifndef TZ_INFO
+#define TZ_INFO "AEST-10AEDT,M10.1.0/2,M4.1.0/3"
+#endif
+#ifndef NTP_SERVER_1
+#define NTP_SERVER_1 "pool.ntp.org"
+#endif
+#ifndef NTP_SERVER_2
+#define NTP_SERVER_2 "time.google.com"
 #endif

@@ -11,6 +11,8 @@ struct ParsedWeatherData {
   std::string relHumidityPct;
   std::string windKmh;
   std::string rainfallMm;
+  std::string dayMinTempC;
+  std::string dayMaxTempC;
   bool valid = false;
 };
 

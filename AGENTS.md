@@ -39,6 +39,10 @@ Reference: `HARDWARE_SPEC.md`
   - Native host unit tests for parser/util logic.
 - `test/fixtures/IDV60920_live_2026-03-01.xml`
   - Real BOM XML snapshot used by integration-style parser test.
+- `docs/hardware/LISTING_2_NOTES.md`
+  - Secondary listing-derived board/pin notes with confidence levels.
+- `docs/hardware/images/`
+  - Storage location for listing screenshots (pin map/spec tables).
 - `platformio.ini`
   - PlatformIO environments:
     - `esp32dev` for firmware build/upload.
@@ -102,6 +106,13 @@ Defined in `platformio.ini` build flags:
 - `TFT_WIDTH=240`
 - `TFT_HEIGHT=320`
 - Driver: `ST7789`
+- Color order: `TFT_BGR`
+- Also required for this board in current setup:
+  - `TFT_MISO=12`
+  - `LOAD_GLCD=1`
+  - `LOAD_FONT2=1`
+  - `LOAD_FONT4=1`
+  - `tft.invertDisplay(false)` in app code
 
 If display is blank/garbled, pins and/or rotation likely differ for this board revision.
 

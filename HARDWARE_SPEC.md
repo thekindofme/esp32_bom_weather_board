@@ -70,7 +70,37 @@ Last updated: 2026-03-01
 - Confirmed display orientation and color order (`RGB`/`BGR`)
 - Confirmed whether PSRAM exists on this exact board
 
-## 8) Recommended verification commands (already used)
+## 8) Known-good display config (verified working on this unit)
+
+The following TFT_eSPI configuration produced a working weather UI:
+
+- Driver: `ST7789`
+- Color order: `TFT_BGR`
+- SPI pins:
+  - `TFT_MOSI = 13`
+  - `TFT_MISO = 12`
+  - `TFT_SCLK = 14`
+  - `TFT_CS = 15`
+  - `TFT_DC = 2`
+  - `TFT_RST = -1`
+- Backlight:
+  - `TFT_BL = 21`
+  - `TFT_BACKLIGHT_ON = HIGH`
+- Geometry:
+  - `TFT_WIDTH = 240`
+  - `TFT_HEIGHT = 320`
+  - `setRotation(1)` in code (landscape)
+- Display color fix in code:
+  - `tft.invertDisplay(false)`
+- Font flags required for visible text in this project:
+  - `LOAD_GLCD`
+  - `LOAD_FONT2`
+  - `LOAD_FONT4`
+
+Observed failure mode before enabling font flags:
+- Screen showed mostly black with a blue line/header outline but missing text.
+
+## 9) Recommended verification commands (already used)
 
 ```bash
 lsusb
@@ -80,3 +110,10 @@ ls -l /dev/ttyUSB*
 .venv/bin/esptool --port /dev/ttyUSB0 flash-id
 .venv/bin/esptool --port /dev/ttyUSB0 read-mac
 ```
+
+## 10) Additional listing references saved
+
+- Secondary listing analysis:
+  - `docs/hardware/LISTING_2_NOTES.md`
+- Image storage location for pin map/spec tables:
+  - `docs/hardware/images/`

@@ -73,6 +73,8 @@ void BomStationParser::FeedLine(const std::string& rawLine) {
     else if (type == "wind_spd_kmh") data_.windKmh = value;
     else if (type == "wind_dir") data_.windDir = value;
     else if (type == "rainfall") data_.rainfallMm = value;
+    else if (type == "minimum_air_temperature") data_.dayMinTempC = value;
+    else if (type == "maximum_air_temperature") data_.dayMaxTempC = value;
   }
 }
 
