@@ -7,6 +7,7 @@ __pycache__/
 .pio/
 .pioenvs/
 .piolibdeps/
+include/ConfigLocal.h
 
 # IDE/editor
 .vscode/

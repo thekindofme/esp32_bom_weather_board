@@ -37,6 +37,8 @@ Reference: `HARDWARE_SPEC.md`
   - FTP utility parsing (`PASV` response parsing).
 - `test/test_bom_parser/test_main.cpp`
   - Native host unit tests for parser/util logic.
+- `test/fixtures/IDV60920_live_2026-03-01.xml`
+  - Real BOM XML snapshot used by integration-style parser test.
 - `platformio.ini`
   - PlatformIO environments:
     - `esp32dev` for firmware build/upload.
@@ -66,6 +68,11 @@ Reference: `HARDWARE_SPEC.md`
 Run tests:
 ```bash
 .venv/bin/pio test -e native
+```
+
+Refresh BOM fixture snapshot:
+```bash
+curl -s ftp://ftp.bom.gov.au/anon/gen/fwo/IDV60920.xml > test/fixtures/IDV60920_live_YYYY-MM-DD.xml
 ```
 
 Build firmware:
@@ -104,7 +111,9 @@ If display is blank/garbled, pins and/or rotation likely differ for this board r
 - Prefer updating parser/util logic under unit tests before touching runtime display/network flow.
 - Preserve BOM FTP approach unless BOM policy/availability changes.
 - Do not hardcode secrets in git:
-  - `Config.h` should keep placeholder Wi-Fi credentials by default.
+  - Keep placeholders/defaults in `include/Config.h`.
+  - Put real local values in `include/ConfigLocal.h` (gitignored).
+  - Use `include/ConfigLocal.example.h` as the template.
 - Before finishing substantive changes:
   - Run `pio test -e native`.
   - If runtime code changed, run at least `pio run -e esp32dev` (when toolchain is available).
