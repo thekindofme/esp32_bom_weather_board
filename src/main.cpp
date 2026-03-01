@@ -51,6 +51,9 @@ bool refreshAnimating = false;
 uint32_t lastSpinnerMs = 0;
 uint8_t spinnerFrame = 0;
 bool hasPwmBacklight = false;
+bool isLightTheme = false;
+bool touchWasActive = false;
+uint32_t lastTouchToggleMs = 0;
 uint16_t themeBg = 0;
 uint16_t themeHeader = 0;
 uint16_t themePanel = 0;
@@ -65,6 +68,8 @@ static void drawRefreshIndicator(bool active);
 static void applyBacklightForTime();
 static void drawNowAndDate();
 static void drawWeather(const WeatherData &w);
+static void drawStatus(const String &status, const String &detail);
+static void initThemeColors();
 
 static bool waitForFtpCode(WiFiClient &control, const char *expectedPrefix, uint32_t timeoutMs, String &response) {
   uint32_t start = millis();
@@ -420,15 +425,26 @@ static String getCurrentDateStringShort() {
 }
 
 static void initThemeColors() {
-  // Night-first palette: muted contrast and no bright white fills.
-  themeBg = tft.color565(1, 6, 12);
-  themeHeader = tft.color565(6, 14, 22);
-  themePanel = tft.color565(9, 20, 30);
-  themeEdge = tft.color565(25, 70, 95);
-  themeText = tft.color565(180, 205, 220);
-  themeTextMuted = tft.color565(95, 130, 150);
-  themeAccent = tft.color565(120, 180, 205);
-  themeGood = tft.color565(105, 185, 135);
+  if (isLightTheme) {
+    themeBg = tft.color565(225, 234, 239);
+    themeHeader = tft.color565(205, 222, 232);
+    themePanel = tft.color565(243, 248, 251);
+    themeEdge = tft.color565(98, 142, 168);
+    themeText = tft.color565(24, 48, 64);
+    themeTextMuted = tft.color565(88, 110, 124);
+    themeAccent = tft.color565(31, 104, 146);
+    themeGood = tft.color565(20, 128, 78);
+  } else {
+    // Night-first palette: muted contrast and no bright white fills.
+    themeBg = tft.color565(1, 6, 12);
+    themeHeader = tft.color565(6, 14, 22);
+    themePanel = tft.color565(9, 20, 30);
+    themeEdge = tft.color565(25, 70, 95);
+    themeText = tft.color565(180, 205, 220);
+    themeTextMuted = tft.color565(95, 130, 150);
+    themeAccent = tft.color565(120, 180, 205);
+    themeGood = tft.color565(105, 185, 135);
+  }
 }
 
 static void drawWeatherIcon(int x, int y, int size, const String &iconCode) {
@@ -531,16 +547,39 @@ static void animateRefreshTick() {
 
 static void applyBacklightForTime() {
 #if defined(TFT_BL) && (TFT_BL >= 0)
-  uint8_t level = 30; // conservative default
+  uint8_t level = isLightTheme ? 60 : 30;
   struct tm t;
   if (getLocalTime(&t, 20)) {
-    // Darker at night to reduce emitted light
-    if (t.tm_hour >= 20 || t.tm_hour < 6) level = 8;
-    else if (t.tm_hour >= 6 && t.tm_hour < 9) level = 18;
-    else level = 35;
+    // Darker at night to reduce emitted light.
+    if (t.tm_hour >= 20 || t.tm_hour < 6) level = isLightTheme ? 35 : 8;
+    else if (t.tm_hour >= 6 && t.tm_hour < 9) level = isLightTheme ? 50 : 18;
+    else level = isLightTheme ? 70 : 35;
   }
   setBacklightPercent(level);
 #endif
+}
+
+static void applyThemeAndRedraw() {
+  initThemeColors();
+  applyBacklightForTime();
+  if (latestData.valid) {
+    drawWeather(latestData);
+  } else {
+    drawStatus("Ready", "Waiting for first weather update");
+  }
+}
+
+static void pollTouchThemeToggle() {
+  // XPT2046 IRQ is active low while the panel is touched.
+  const bool touchActive = (digitalRead(TOUCH_IRQ_PIN) == LOW);
+  const uint32_t now = millis();
+
+  if (touchActive && !touchWasActive && (now - lastTouchToggleMs >= TOUCH_TOGGLE_DEBOUNCE_MS)) {
+    isLightTheme = !isLightTheme;
+    lastTouchToggleMs = now;
+    applyThemeAndRedraw();
+  }
+  touchWasActive = touchActive;
 }
 
 static void drawWeather(const WeatherData &w) {
@@ -698,6 +737,7 @@ void setup() {
   setBacklightPercent(20);
 #endif
 
+  pinMode(TOUCH_IRQ_PIN, INPUT);
   initThemeColors();
   drawStatus("Booting", "Starting Wi-Fi and display");
   Serial.println("[boot] display init done");
@@ -709,6 +749,7 @@ void setup() {
 
 void loop() {
   const uint32_t now = millis();
+  pollTouchThemeToggle();
   if (latestData.valid && now - lastClockUpdateMs >= 1000UL) {
     drawNowAndDate();
     lastClockUpdateMs = now;

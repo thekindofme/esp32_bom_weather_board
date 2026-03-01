@@ -62,3 +62,11 @@
 #ifndef NTP_SERVER_2
 #define NTP_SERVER_2 "time.google.com"
 #endif
+
+// Touch toggle (XPT2046 IRQ line on many ESP32-2432S028 boards)
+#ifndef TOUCH_IRQ_PIN
+#define TOUCH_IRQ_PIN 36
+#endif
+#ifndef TOUCH_TOGGLE_DEBOUNCE_MS
+#define TOUCH_TOGGLE_DEBOUNCE_MS 400UL
+#endif
