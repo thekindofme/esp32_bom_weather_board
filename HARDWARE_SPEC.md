@@ -58,8 +58,10 @@ Last updated: 2026-03-01
 - BOM web JSON endpoints are protected by anti-scraping controls.
 - BOM anonymous FTP feed is reachable and suitable for automated embedded fetch:
   - Host: `ftp.bom.gov.au`
-  - Example observations feed path: `/anon/gen/fwo/IDV60920.xml` (VIC)
+  - Observations feed path used: `/anon/gen/fwo/IDV60920.xml` (VIC)
+  - Forecast feed path used: `/anon/gen/fwo/IDV10753.xml` (VIC location forecast)
 - Station selection is done via the station `bom-id` in the XML.
+- Forecast location selection is done via forecast `area description` (current: `Tullamarine`).
 
 ## 7) Unknowns to verify before final production firmware
 
@@ -89,7 +91,7 @@ The following TFT_eSPI configuration produced a working weather UI:
 - Geometry:
   - `TFT_WIDTH = 240`
   - `TFT_HEIGHT = 320`
-  - `setRotation(1)` in code (landscape)
+  - `setRotation(0)` in code (portrait)
 - Display color fix in code:
   - `tft.invertDisplay(false)`
 - Font flags required for visible text in this project:
@@ -100,7 +102,23 @@ The following TFT_eSPI configuration produced a working weather UI:
 Observed failure mode before enabling font flags:
 - Screen showed mostly black with a blue line/header outline but missing text.
 
-## 9) Recommended verification commands (already used)
+## 9) Current firmware UI profile
+
+- Portrait dashboard optimized for small screen:
+  - current conditions card
+  - daily ranges (temp and approximate feels-like range)
+  - daily rain range + estimated AM/PM split (marked with `~`)
+  - next 3-day mini forecast cards with icons and min/max/rain summary
+  - live time/date strip
+- Refresh behavior:
+  - no full-screen "updating" state
+  - existing weather data remains visible during fetch
+  - small animated indicator shown in header while network fetch is in progress
+- Night light minimization:
+  - dark-theme palette
+  - time-based backlight dimming (lower at night)
+
+## 10) Recommended verification commands (already used)
 
 ```bash
 lsusb
@@ -111,7 +129,7 @@ ls -l /dev/ttyUSB*
 .venv/bin/esptool --port /dev/ttyUSB0 read-mac
 ```
 
-## 10) Additional listing references saved
+## 11) Additional listing references saved
 
 - Secondary listing analysis:
   - `docs/hardware/LISTING_2_NOTES.md`

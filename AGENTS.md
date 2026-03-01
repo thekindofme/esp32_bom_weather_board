@@ -6,6 +6,10 @@ This file is the working guide for any coding agent operating in this repository
 
 - Project: ESP32 weather display firmware for an ST7789 screen.
 - Goal: continuously show live weather data for the Greenvale area using BOM data.
+- Current UX:
+  - Portrait dashboard (`240x320`) with current conditions + 3-day summary cards.
+  - Night-friendly dark theme with reduced brightness at night.
+  - During refresh, existing weather data remains visible and only a small animated header indicator is shown.
 - Current data source strategy: BOM anonymous FTP XML feed (`ftp.bom.gov.au`) because BOM web endpoints are protected against scraping.
 
 ## Current hardware baseline
@@ -29,6 +33,11 @@ Reference: `HARDWARE_SPEC.md`
 - `src/main.cpp`
   - Firmware entrypoint.
   - Wi-Fi connect/reconnect, BOM FTP fetch, display rendering loop.
+  - Also includes:
+    - NTP time/date sync and display
+    - Forecast parsing for daily rain/next 3 days
+    - dark-mode palette and time-based backlight dimming
+    - integrated refresh spinner (no blank update screen)
 - `include/Config.h`
   - Runtime configuration: Wi-Fi credentials, BOM file path, station ID, refresh intervals.
 - `include/BomParser.h` + `src/BomParser.cpp`
@@ -50,8 +59,10 @@ Reference: `HARDWARE_SPEC.md`
 
 ## BOM integration details
 
-- Default feed: `/anon/gen/fwo/IDV60920.xml` (Victoria observations).
+- Observation feed: `/anon/gen/fwo/IDV60920.xml` (Victoria observations).
 - Default station for Greenvale: `086282` (`Melbourne Airport`), because Greenvale is not a direct station entry in this feed.
+- Forecast feed: `/anon/gen/fwo/IDV10753.xml` (VIC location forecasts)
+- Forecast location currently used for Greenvale context: `Tullamarine`
 - Parser fields currently extracted:
   - `air_temperature`
   - `apparent_temp`
@@ -59,7 +70,13 @@ Reference: `HARDWARE_SPEC.md`
   - `wind_spd_kmh`
   - `wind_dir`
   - `rainfall`
+  - running daily min/max from observations (`minimum_air_temperature`, `maximum_air_temperature`)
   - station description and observation local time
+  - from forecast feed:
+    - icon code
+    - precipitation range and probability
+    - daily min/max
+    - next 3-day summary fields
 
 ## Build, test, flash
 
@@ -116,6 +133,9 @@ Defined in `platformio.ini` build flags:
 
 If display is blank/garbled, pins and/or rotation likely differ for this board revision.
 
+Current orientation in app:
+- `setRotation(0)` portrait mode
+
 ## Working rules for agents
 
 - Keep changes focused and testable.
@@ -132,9 +152,9 @@ If display is blank/garbled, pins and/or rotation likely differ for this board r
 ## Known gaps / TODO
 
 - Verify actual touch controller IC and integration.
-- Confirm final working display pin map for this exact board unit.
 - Optional: switch to a more robust XML parser if feed structure changes.
-- Optional: add integration test with captured BOM XML fixture.
+- Optional: add test coverage for forecast parsing logic (current tests focus on observation parsing/PASV).
+- Improve AM/PM rain split with a true higher-resolution source (currently marked as estimate `~`).
 
 ## Safety notes
 

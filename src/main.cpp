@@ -41,9 +41,28 @@ TFT_eSPI tft = TFT_eSPI();
 
 uint32_t lastRefreshMs = 0;
 uint32_t lastClockUpdateMs = 0;
+uint32_t lastBacklightAdjustMs = 0;
 String lastError;
 WeatherData latestData;
 bool ntpConfigured = false;
+bool refreshAnimating = false;
+uint32_t lastSpinnerMs = 0;
+uint8_t spinnerFrame = 0;
+bool hasPwmBacklight = false;
+uint16_t themeBg = 0;
+uint16_t themeHeader = 0;
+uint16_t themePanel = 0;
+uint16_t themeEdge = 0;
+uint16_t themeText = 0;
+uint16_t themeTextMuted = 0;
+uint16_t themeAccent = 0;
+uint16_t themeGood = 0;
+
+static void animateRefreshTick();
+static void drawRefreshIndicator(bool active);
+static void applyBacklightForTime();
+static void drawNowAndDate();
+static void drawWeather(const WeatherData &w);
 
 static bool waitForFtpCode(WiFiClient &control, const char *expectedPrefix, uint32_t timeoutMs, String &response) {
   uint32_t start = millis();
@@ -59,6 +78,7 @@ static bool waitForFtpCode(WiFiClient &control, const char *expectedPrefix, uint
     if (!response.isEmpty() && response.startsWith(expectedPrefix)) {
       return true;
     }
+    animateRefreshTick();
     delay(10);
   }
   return false;
@@ -201,6 +221,7 @@ static bool fetchFromBomFtp(WeatherData &outData, String &error) {
     String line = data.readStringUntil('\n');
     line.trim();
     if (line.isEmpty()) {
+      animateRefreshTick();
       delay(1);
       continue;
     }
@@ -294,7 +315,10 @@ static bool fetchForecastRainFromBomFtp(WeatherData &outData, String &error) {
   while (data.connected() || data.available()) {
     String line = data.readStringUntil('\n');
     line.trim();
-    if (line.isEmpty()) continue;
+    if (line.isEmpty()) {
+      animateRefreshTick();
+      continue;
+    }
 
     if (!inTargetArea) {
       if (line.startsWith("<area ") &&
@@ -427,6 +451,20 @@ static bool ensureTimeConfigured() {
   return false;
 }
 
+static void setBacklightPercent(uint8_t percent) {
+#if defined(TFT_BL) && (TFT_BL >= 0)
+  percent = percent > 100 ? 100 : percent;
+  if (hasPwmBacklight) {
+    uint32_t duty = (255UL * percent) / 100UL;
+    ledcWrite(0, duty);
+  } else {
+    digitalWrite(TFT_BL, percent > 0 ? TFT_BACKLIGHT_ON : !TFT_BACKLIGHT_ON);
+  }
+#else
+  (void)percent;
+#endif
+}
+
 static String getCurrentTimeString() {
   struct tm t;
   if (!getLocalTime(&t, 50)) {
@@ -445,6 +483,18 @@ static String getCurrentDateString() {
   char buf[20];
   strftime(buf, sizeof(buf), "%a %d %b %Y", &t);
   return String(buf);
+}
+
+static void initThemeColors() {
+  // Night-first palette: muted contrast and no bright white fills.
+  themeBg = tft.color565(1, 6, 12);
+  themeHeader = tft.color565(6, 14, 22);
+  themePanel = tft.color565(9, 20, 30);
+  themeEdge = tft.color565(25, 70, 95);
+  themeText = tft.color565(180, 205, 220);
+  themeTextMuted = tft.color565(95, 130, 150);
+  themeAccent = tft.color565(120, 180, 205);
+  themeGood = tft.color565(105, 185, 135);
 }
 
 static void drawWeatherIcon(int x, int y, int size, const String &iconCode) {
@@ -494,54 +544,96 @@ static void drawWeatherIcon(int x, int y, int size, const String &iconCode) {
 }
 
 static void drawNowAndDate() {
-  tft.fillRect(8, 284, 224, 30, tft.color565(6, 22, 40));
-  tft.drawRoundRect(8, 284, 224, 30, 5, tft.color565(45, 120, 160));
-  tft.setTextColor(tft.color565(145, 230, 170), tft.color565(6, 22, 40));
+  tft.fillRect(8, 284, 224, 30, themePanel);
+  tft.drawRoundRect(8, 284, 224, 30, 5, themeEdge);
+  tft.setTextColor(themeGood, themePanel);
   tft.drawString(getCurrentTimeString(), 16, 287, 2);
   tft.drawString(getCurrentDateString(), 92, 287, 2);
 }
 
 static void drawHeader(const char *title) {
-  tft.fillScreen(tft.color565(5, 14, 28));
-  tft.setTextColor(tft.color565(170, 230, 255), tft.color565(5, 14, 28));
+  tft.fillScreen(themeBg);
+  tft.fillRect(0, 0, tft.width(), 30, themeHeader);
+  tft.setTextColor(themeAccent, themeHeader);
   tft.setTextDatum(TL_DATUM);
   tft.drawString(title, 8, 8, 2);
-  tft.drawFastHLine(0, 28, tft.width(), tft.color565(30, 110, 145));
+  tft.drawFastHLine(0, 28, tft.width(), themeEdge);
+  drawRefreshIndicator(refreshAnimating);
+}
+
+static void drawRefreshIndicator(bool active) {
+  const int cx = 223;
+  const int cy = 14;
+  const int r = 7;
+  static const int8_t dx[8] = {0, 4, 6, 4, 0, -4, -6, -4};
+  static const int8_t dy[8] = {-6, -4, 0, 4, 6, 4, 0, -4};
+
+  tft.fillCircle(cx, cy, r + 2, themeHeader);
+  tft.drawCircle(cx, cy, r, themeEdge);
+  if (!active) return;
+
+  for (int i = 0; i < 8; ++i) {
+    uint16_t c = (i == spinnerFrame) ? themeAccent : themeTextMuted;
+    tft.fillCircle(cx + dx[i], cy + dy[i], (i == spinnerFrame) ? 2 : 1, c);
+  }
+}
+
+static void animateRefreshTick() {
+  if (!refreshAnimating) return;
+  uint32_t now = millis();
+  if (now - lastSpinnerMs < 120UL) return;
+  lastSpinnerMs = now;
+  spinnerFrame = (spinnerFrame + 1) % 8;
+  drawRefreshIndicator(true);
+}
+
+static void applyBacklightForTime() {
+#if defined(TFT_BL) && (TFT_BL >= 0)
+  uint8_t level = 30; // conservative default
+  struct tm t;
+  if (getLocalTime(&t, 20)) {
+    // Darker at night to reduce emitted light
+    if (t.tm_hour >= 20 || t.tm_hour < 6) level = 8;
+    else if (t.tm_hour >= 6 && t.tm_hour < 9) level = 18;
+    else level = 35;
+  }
+  setBacklightPercent(level);
+#endif
 }
 
 static void drawWeather(const WeatherData &w) {
   drawHeader("BOM Weather");
 
-  uint16_t card = tft.color565(8, 26, 46);
-  uint16_t cardEdge = tft.color565(30, 110, 145);
+  uint16_t card = themePanel;
+  uint16_t cardEdge = themeEdge;
 
   // Main card
   tft.fillRoundRect(8, 36, 224, 130, 8, card);
   tft.drawRoundRect(8, 36, 224, 130, 8, cardEdge);
-  tft.setTextColor(TFT_WHITE, card);
+  tft.setTextColor(themeText, card);
   tft.drawString(w.stationName, 16, 42, 2);
   drawWeatherIcon(176, 50, 42, w.currentIconCode);
 
-  tft.setTextColor(tft.color565(255, 223, 99), card);
+  tft.setTextColor(tft.color565(210, 196, 120), card);
   tft.drawString(w.airTempC + "C", 16, 66, 4);
-  tft.setTextColor(tft.color565(190, 220, 255), card);
+  tft.setTextColor(themeAccent, card);
   tft.drawString("Feels " + w.apparentTempC + "C", 16, 102, 2);
 
-  tft.setTextColor(tft.color565(155, 185, 200), card);
+  tft.setTextColor(themeTextMuted, card);
   tft.drawString("T " + w.dayMinTempC + "-" + w.dayMaxTempC + "C", 16, 124, 1);
   tft.drawString("F~ " + w.feelsMinTempC + "-" + w.feelsMaxTempC + "C", 120, 124, 1);
 
   // Details strip
   tft.fillRoundRect(8, 172, 224, 46, 7, card);
   tft.drawRoundRect(8, 172, 224, 46, 7, cardEdge);
-  tft.setTextColor(TFT_WHITE, card);
+  tft.setTextColor(themeText, card);
   tft.drawString("Hum " + w.relHumidityPct + "%", 14, 178, 2);
   tft.drawString("Wind " + w.windDir + " " + w.windKmh + "km/h", 110, 178, 2);
   tft.drawString("Rain day " + w.rainTodayRange, 14, 196, 1);
   tft.drawString("AM~ " + w.rainMorningRange + " PM~ " + w.rainEveningRange, 118, 196, 1);
 
   // Next days cards
-  tft.setTextColor(tft.color565(160, 220, 255), tft.color565(5, 14, 28));
+  tft.setTextColor(themeAccent, themeBg);
   tft.drawString("Next 3 Days", 8, 224, 2);
   for (int i = 0; i < 3; ++i) {
     int x = 8 + i * 76;
@@ -549,7 +641,7 @@ static void drawWeather(const WeatherData &w) {
     tft.fillRoundRect(x, y, 72, 34, 6, card);
     tft.drawRoundRect(x, y, 72, 34, 6, cardEdge);
     drawWeatherIcon(x + 2, y + 2, 20, w.nextDayIconCode[i]);
-    tft.setTextColor(TFT_WHITE, card);
+    tft.setTextColor(themeText, card);
     String label = w.nextDayLabel[i].isEmpty() ? String("D+") + String(i + 1) : w.nextDayLabel[i];
     tft.drawString(label, x + 24, y + 3, 1);
     tft.drawString(w.nextDayMinC[i] + "-" + w.nextDayMaxC[i] + "C", x + 24, y + 14, 1);
@@ -558,21 +650,24 @@ static void drawWeather(const WeatherData &w) {
     tft.drawString(rain, x + 24, y + 24, 1);
   }
 
-  tft.setTextColor(tft.color565(120, 170, 200), tft.color565(5, 14, 28));
+  tft.setTextColor(themeTextMuted, themeBg);
   tft.drawString("Obs " + w.observedTimeLocal, 8, 314, 1);
   drawNowAndDate();
 }
 
 static void drawStatus(const String &status, const String &detail) {
   drawHeader("ESP32 BOM Weather");
-  tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+  tft.setTextColor(themeAccent, themeBg);
   tft.drawString(status, 8, 54, 2);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(themeText, themeBg);
   tft.drawString(detail, 8, 84, 2);
 }
 
 static void refreshWeatherNow() {
   Serial.println("[weather] refresh start");
+  refreshAnimating = true;
+  spinnerFrame = 0;
+  drawRefreshIndicator(true);
   if (!ensureWifiConnected()) {
     lastError = "Wi-Fi connect timeout";
     Serial.println("[weather] wifi failed");
@@ -583,12 +678,13 @@ static void refreshWeatherNow() {
     } else {
       drawStatus("Wi-Fi failed", lastError);
     }
+    refreshAnimating = false;
+    drawRefreshIndicator(false);
     return;
   }
 
   ensureTimeConfigured();
-
-  drawStatus("Updating...", "Fetching BOM FTP XML");
+  applyBacklightForTime();
   Serial.println("[weather] fetching BOM feed");
 
   WeatherData fresh;
@@ -641,6 +737,8 @@ static void refreshWeatherNow() {
       drawStatus("BOM fetch failed", lastError);
     }
   }
+  refreshAnimating = false;
+  drawRefreshIndicator(false);
 }
 
 void setup() {
@@ -653,14 +751,18 @@ void setup() {
   tft.invertDisplay(false);
 
 #if defined(TFT_BL) && (TFT_BL >= 0)
-  pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+  ledcSetup(0, 5000, 8);
+  ledcAttachPin(TFT_BL, 0);
+  hasPwmBacklight = true;
+  setBacklightPercent(20);
 #endif
 
+  initThemeColors();
   drawStatus("Booting", "Starting Wi-Fi and display");
   Serial.println("[boot] display init done");
   refreshWeatherNow();
   lastRefreshMs = millis();
+  lastBacklightAdjustMs = millis();
   Serial.println("[boot] setup complete");
 }
 
@@ -670,6 +772,11 @@ void loop() {
     drawNowAndDate();
     lastClockUpdateMs = now;
   }
+  if (now - lastBacklightAdjustMs >= 60000UL) {
+    applyBacklightForTime();
+    lastBacklightAdjustMs = now;
+  }
+  animateRefreshTick();
   if (now - lastRefreshMs >= WEATHER_REFRESH_MS) {
     refreshWeatherNow();
     lastRefreshMs = now;
