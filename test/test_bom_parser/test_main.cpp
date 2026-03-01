@@ -5,7 +5,9 @@
 #include <vector>
 
 #include "BomParser.h"
+#include "ForecastParser.h"
 #include "FtpUtils.h"
+#include "WeatherMath.h"
 
 void test_parse_pasv_response_success() {
   std::string ip;
@@ -39,6 +41,8 @@ void test_parse_station_success() {
       "<element type=\"wind_dir\">NNE</element>",
       "<element units=\"km/h\" type=\"wind_spd_kmh\">20</element>",
       "<element units=\"mm\" type=\"rainfall\">5.0</element>",
+      "<element type=\"minimum_air_temperature\">18.1</element>",
+      "<element type=\"maximum_air_temperature\">29.4</element>",
       "</level>",
       "</period>",
       "</station>",
@@ -62,6 +66,8 @@ void test_parse_station_success() {
   TEST_ASSERT_EQUAL_STRING("NNE", out.windDir.c_str());
   TEST_ASSERT_EQUAL_STRING("20", out.windKmh.c_str());
   TEST_ASSERT_EQUAL_STRING("5.0", out.rainfallMm.c_str());
+  TEST_ASSERT_EQUAL_STRING("18.1", out.dayMinTempC.c_str());
+  TEST_ASSERT_EQUAL_STRING("29.4", out.dayMaxTempC.c_str());
 }
 
 void test_parse_station_not_found() {
@@ -114,6 +120,100 @@ void test_parse_real_bom_fixture_melbourne_airport() {
   TEST_ASSERT_EQUAL_STRING("5.0", out.rainfallMm.c_str());
 }
 
+void test_weather_math_helpers() {
+  float value = 0.0f;
+  TEST_ASSERT_TRUE(ParseFirstFloat(" 15 to 45 mm", value));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 15.0f, value);
+
+  float lo = 0.0f, hi = 0.0f;
+  TEST_ASSERT_TRUE(ParseRangeToFloats("15 to 45 mm", lo, hi));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 15.0f, lo);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 45.0f, hi);
+
+  std::string am, pm;
+  TEST_ASSERT_TRUE(EstimateHalfDayRainRange("10 to 30 mm", am, pm));
+  TEST_ASSERT_EQUAL_STRING("~5-15 mm", am.c_str());
+  TEST_ASSERT_EQUAL_STRING("~5-15 mm", pm.c_str());
+
+  std::string fmin, fmax;
+  TEST_ASSERT_TRUE(EstimateFeelsRange("20.9", "19.7", "20", "23", fmin, fmax));
+  TEST_ASSERT_EQUAL_STRING("18.8", fmin.c_str());
+  TEST_ASSERT_EQUAL_STRING("21.8", fmax.c_str());
+}
+
+void test_forecast_location_parser_success() {
+  const std::vector<std::string> lines = {
+      "<forecast>",
+      "<area description=\"Melbourne\" type=\"location\">",
+      "<forecast-period index=\"0\" start-time-local=\"2026-03-01T16:00:00+11:00\">",
+      "<element type=\"forecast_icon_code\">12</element>",
+      "<text type=\"probability_of_precipitation\">95%</text>",
+      "</forecast-period>",
+      "</area>",
+      "<area description=\"Tullamarine\" type=\"location\">",
+      "<forecast-period index=\"0\" start-time-local=\"2026-03-01T16:00:00+11:00\">",
+      "<element type=\"forecast_icon_code\">12</element>",
+      "<text type=\"probability_of_precipitation\">95%</text>",
+      "</forecast-period>",
+      "<forecast-period index=\"1\" start-time-local=\"2026-03-02T00:00:00+11:00\">",
+      "<element type=\"forecast_icon_code\">12</element>",
+      "<element type=\"precipitation_range\">15 to 45 mm</element>",
+      "<element type=\"air_temperature_minimum\" units=\"Celsius\">20</element>",
+      "<element type=\"air_temperature_maximum\" units=\"Celsius\">23</element>",
+      "<text type=\"probability_of_precipitation\">100%</text>",
+      "</forecast-period>",
+      "<forecast-period index=\"2\" start-time-local=\"2026-03-03T00:00:00+11:00\">",
+      "<element type=\"forecast_icon_code\">4</element>",
+      "<element type=\"precipitation_range\">0 to 1 mm</element>",
+      "<element type=\"air_temperature_minimum\" units=\"Celsius\">16</element>",
+      "<element type=\"air_temperature_maximum\" units=\"Celsius\">20</element>",
+      "<text type=\"probability_of_precipitation\">30%</text>",
+      "</forecast-period>",
+      "<forecast-period index=\"3\" start-time-local=\"2026-03-04T00:00:00+11:00\">",
+      "<element type=\"forecast_icon_code\">4</element>",
+      "<element type=\"precipitation_range\">0 to 1 mm</element>",
+      "<element type=\"air_temperature_minimum\" units=\"Celsius\">16</element>",
+      "<element type=\"air_temperature_maximum\" units=\"Celsius\">21</element>",
+      "<text type=\"probability_of_precipitation\">30%</text>",
+      "</forecast-period>",
+      "</area>",
+      "</forecast>",
+  };
+
+  ForecastLocationParser parser("Tullamarine");
+  for (const auto& l : lines) parser.FeedLine(l);
+
+  std::string err;
+  TEST_ASSERT_TRUE_MESSAGE(parser.Finalize(err), err.c_str());
+  const ForecastParseResult& out = parser.Data();
+  TEST_ASSERT_EQUAL_STRING("12", out.currentIconCode.c_str());
+  TEST_ASSERT_EQUAL_STRING("15 to 45 mm", out.rainTodayRange.c_str());
+  TEST_ASSERT_EQUAL_STRING("100%", out.rainTodayChance.c_str());
+  TEST_ASSERT_EQUAL_STRING("Mon", out.days[0].label.c_str());
+  TEST_ASSERT_EQUAL_STRING("12", out.days[0].iconCode.c_str());
+  TEST_ASSERT_EQUAL_STRING("20", out.days[0].minC.c_str());
+  TEST_ASSERT_EQUAL_STRING("23", out.days[0].maxC.c_str());
+}
+
+void test_forecast_location_parser_fallback_probability() {
+  const std::vector<std::string> lines = {
+      "<area description=\"Tullamarine\" type=\"location\">",
+      "<forecast-period index=\"0\" start-time-local=\"2026-03-01T16:00:00+11:00\">",
+      "<text type=\"probability_of_precipitation\">80%</text>",
+      "</forecast-period>",
+      "<forecast-period index=\"1\" start-time-local=\"2026-03-02T00:00:00+11:00\">",
+      "<text type=\"probability_of_precipitation\">90%</text>",
+      "</forecast-period>",
+      "</area>",
+  };
+  ForecastLocationParser parser("Tullamarine");
+  for (const auto& l : lines) parser.FeedLine(l);
+  std::string err;
+  TEST_ASSERT_TRUE_MESSAGE(parser.Finalize(err), err.c_str());
+  const ForecastParseResult& out = parser.Data();
+  TEST_ASSERT_EQUAL_STRING("~80% chance", out.rainTodayRange.c_str());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_pasv_response_success);
@@ -122,5 +222,8 @@ int main(int, char**) {
   RUN_TEST(test_parse_station_not_found);
   RUN_TEST(test_parse_station_missing_temp);
   RUN_TEST(test_parse_real_bom_fixture_melbourne_airport);
+  RUN_TEST(test_weather_math_helpers);
+  RUN_TEST(test_forecast_location_parser_success);
+  RUN_TEST(test_forecast_location_parser_fallback_probability);
   return UNITY_END();
 }

@@ -8,7 +8,9 @@
 
 #include "BomParser.h"
 #include "Config.h"
+#include "ForecastParser.h"
 #include "FtpUtils.h"
+#include "WeatherMath.h"
 
 struct WeatherData {
   String stationName;
@@ -304,13 +306,7 @@ static bool fetchForecastRainFromBomFtp(WeatherData &outData, String &error) {
     return false;
   }
 
-  bool inTargetArea = false;
-  String periodIndex = "";
-  String dayRange = "";
-  String dayChance = "";
-  String fallbackProb0 = "";
-  String currentDayIcon = "";
-  String pStartLocal = "";
+  ForecastLocationParser parser(BOM_FORECAST_LOCATION);
 
   while (data.connected() || data.available()) {
     String line = data.readStringUntil('\n');
@@ -319,73 +315,9 @@ static bool fetchForecastRainFromBomFtp(WeatherData &outData, String &error) {
       animateRefreshTick();
       continue;
     }
-
-    if (!inTargetArea) {
-      if (line.startsWith("<area ") &&
-          line.indexOf(String("description=\"") + BOM_FORECAST_LOCATION + "\"") >= 0 &&
-          line.indexOf("type=\"location\"") >= 0) {
-        inTargetArea = true;
-      }
-      continue;
-    }
-
-    if (line.startsWith("</area")) break;
-
-    if (line.startsWith("<forecast-period ")) {
-      periodIndex = "";
-      int p = line.indexOf("index=\"");
-      if (p >= 0) {
-        int s = p + 7;
-        int e = line.indexOf('"', s);
-        if (e > s) periodIndex = line.substring(s, e);
-      }
-      pStartLocal = extractAttributeFromLine(line, "start-time-local");
-      if (periodIndex == "1") outData.nextDayLabel[0] = dayLabelFromIso(pStartLocal);
-      if (periodIndex == "2") outData.nextDayLabel[1] = dayLabelFromIso(pStartLocal);
-      if (periodIndex == "3") outData.nextDayLabel[2] = dayLabelFromIso(pStartLocal);
-      continue;
-    }
-
-    if (line.indexOf("type=\"forecast_icon_code\"") >= 0) {
-      String val = extractXmlValue(line);
-      if (periodIndex == "0") currentDayIcon = val;
-      if (periodIndex == "1") outData.nextDayIconCode[0] = val;
-      if (periodIndex == "2") outData.nextDayIconCode[1] = val;
-      if (periodIndex == "3") outData.nextDayIconCode[2] = val;
-      continue;
-    }
-    if (line.indexOf("type=\"air_temperature_minimum\"") >= 0) {
-      String val = extractXmlValue(line);
-      if (periodIndex == "1") outData.nextDayMinC[0] = val;
-      if (periodIndex == "2") outData.nextDayMinC[1] = val;
-      if (periodIndex == "3") outData.nextDayMinC[2] = val;
-      continue;
-    }
-    if (line.indexOf("type=\"air_temperature_maximum\"") >= 0) {
-      String val = extractXmlValue(line);
-      if (periodIndex == "1") outData.nextDayMaxC[0] = val;
-      if (periodIndex == "2") outData.nextDayMaxC[1] = val;
-      if (periodIndex == "3") outData.nextDayMaxC[2] = val;
-      continue;
-    }
-    if (line.indexOf("type=\"precipitation_range\"") >= 0) {
-      String val = extractXmlValue(line);
-      if (periodIndex == "1") dayRange = val;
-      if (periodIndex == "1") outData.nextDayRain[0] = val;
-      if (periodIndex == "2") outData.nextDayRain[1] = val;
-      if (periodIndex == "3") outData.nextDayRain[2] = val;
-      continue;
-    }
-    if (line.indexOf("type=\"probability_of_precipitation\"") >= 0) {
-      String val = extractXmlValue(line);
-      if (periodIndex == "0") fallbackProb0 = val;
-      if (periodIndex == "1") {
-        dayChance = val;
-        outData.nextDayRainChance[0] = val;
-      }
-      if (periodIndex == "2") outData.nextDayRainChance[1] = val;
-      if (periodIndex == "3") outData.nextDayRainChance[2] = val;
-      continue;
+    parser.FeedLine(std::string(line.c_str()));
+    if (parser.IsDone()) {
+      break;
     }
   }
 
@@ -394,28 +326,34 @@ static bool fetchForecastRainFromBomFtp(WeatherData &outData, String &error) {
   sendFtpCommand(control, "QUIT", "221", resp);
   control.stop();
 
-  dayRange.trim();
-  if (dayRange.isEmpty()) {
-    if (!fallbackProb0.isEmpty()) {
-      outData.rainTodayRange = "~" + fallbackProb0 + " chance";
-      outData.rainMorningRange = "--";
-      outData.rainEveningRange = "~" + fallbackProb0;
-      return true;
-    }
-    error = "No forecast rain range";
+  std::string pErr;
+  if (!parser.Finalize(pErr)) {
+    error = String(pErr.c_str());
     return false;
   }
 
-  outData.rainTodayRange = dayRange;
-  outData.rainTodayChance = dayChance;
-  outData.currentIconCode = currentDayIcon;
-  float lo = 0.0f, hi = 0.0f;
-  if (parseRangeToFloats(dayRange, lo, hi)) {
-    outData.rainMorningRange = "~" + formatRange(lo / 2.0f, hi / 2.0f) + " mm";
-    outData.rainEveningRange = "~" + formatRange(lo / 2.0f, hi / 2.0f) + " mm";
+  const ForecastParseResult& r = parser.Data();
+  outData.rainTodayRange = String(r.rainTodayRange.c_str());
+  outData.rainTodayChance = String(r.rainTodayChance.c_str());
+  outData.currentIconCode = String(r.currentIconCode.c_str());
+
+  std::string am;
+  std::string pm;
+  if (EstimateHalfDayRainRange(r.rainTodayRange, am, pm)) {
+    outData.rainMorningRange = String(am.c_str());
+    outData.rainEveningRange = String(pm.c_str());
   } else {
     outData.rainMorningRange = "--";
     outData.rainEveningRange = "--";
+  }
+
+  for (int i = 0; i < 3; ++i) {
+    outData.nextDayLabel[i] = String(r.days[i].label.c_str());
+    outData.nextDayIconCode[i] = String(r.days[i].iconCode.c_str());
+    outData.nextDayMinC[i] = String(r.days[i].minC.c_str());
+    outData.nextDayMaxC[i] = String(r.days[i].maxC.c_str());
+    outData.nextDayRain[i] = String(r.days[i].rainRange.c_str());
+    outData.nextDayRainChance[i] = String(r.days[i].rainChance.c_str());
   }
   return true;
 }
@@ -697,18 +635,17 @@ static void refreshWeatherNow() {
       fresh.rainEveningRange = "--";
     }
 
-    bool okAir = false, okFeels = false;
-    float air = parseFirstFloat(fresh.airTempC, okAir);
-    float feels = parseFirstFloat(fresh.apparentTempC, okFeels);
-    if (okAir && okFeels && !fresh.dayMinTempC.isEmpty() && !fresh.dayMaxTempC.isEmpty()) {
-      bool okMin = false, okMax = false;
-      float minA = parseFirstFloat(fresh.dayMinTempC, okMin);
-      float maxA = parseFirstFloat(fresh.dayMaxTempC, okMax);
-      if (okMin && okMax) {
-        float delta = feels - air;
-        fresh.feelsMinTempC = String(minA + delta, 1);
-        fresh.feelsMaxTempC = String(maxA + delta, 1);
-      }
+    std::string fmin;
+    std::string fmax;
+    if (EstimateFeelsRange(
+            std::string(fresh.airTempC.c_str()),
+            std::string(fresh.apparentTempC.c_str()),
+            std::string(fresh.dayMinTempC.c_str()),
+            std::string(fresh.dayMaxTempC.c_str()),
+            fmin,
+            fmax)) {
+      fresh.feelsMinTempC = String(fmin.c_str());
+      fresh.feelsMaxTempC = String(fmax.c_str());
     }
     if (fresh.feelsMinTempC.isEmpty()) fresh.feelsMinTempC = "--";
     if (fresh.feelsMaxTempC.isEmpty()) fresh.feelsMaxTempC = "--";
