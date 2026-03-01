@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -85,6 +86,34 @@ void test_parse_station_missing_temp() {
   TEST_ASSERT_EQUAL_STRING("Missing temp data", error.c_str());
 }
 
+void test_parse_real_bom_fixture_melbourne_airport() {
+  std::ifstream fixture("test/fixtures/IDV60920_live_2026-03-01.xml");
+  TEST_ASSERT_TRUE_MESSAGE(fixture.is_open(), "Fixture file not found");
+
+  BomStationParser parser("086282");
+  std::string line;
+  while (std::getline(fixture, line)) {
+    parser.FeedLine(line);
+    if (parser.IsDone()) {
+      break;
+    }
+  }
+
+  std::string error;
+  TEST_ASSERT_TRUE_MESSAGE(parser.Finalize(error), error.c_str());
+
+  const ParsedWeatherData& out = parser.Data();
+  TEST_ASSERT_TRUE(out.valid);
+  TEST_ASSERT_EQUAL_STRING("Melbourne Airport", out.stationName.c_str());
+  TEST_ASSERT_EQUAL_STRING("2026-03-01T20:20:00+11:00", out.observedTimeLocal.c_str());
+  TEST_ASSERT_EQUAL_STRING("20.9", out.airTempC.c_str());
+  TEST_ASSERT_EQUAL_STRING("19.7", out.apparentTempC.c_str());
+  TEST_ASSERT_EQUAL_STRING("86", out.relHumidityPct.c_str());
+  TEST_ASSERT_EQUAL_STRING("NNE", out.windDir.c_str());
+  TEST_ASSERT_EQUAL_STRING("22", out.windKmh.c_str());
+  TEST_ASSERT_EQUAL_STRING("5.0", out.rainfallMm.c_str());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_pasv_response_success);
@@ -92,5 +121,6 @@ int main(int, char**) {
   RUN_TEST(test_parse_station_success);
   RUN_TEST(test_parse_station_not_found);
   RUN_TEST(test_parse_station_missing_temp);
+  RUN_TEST(test_parse_real_bom_fixture_melbourne_airport);
   return UNITY_END();
 }
