@@ -478,12 +478,18 @@ static void drawWeatherIcon(int x, int y, int size, const String &iconCode) {
 }
 
 static void drawNowAndDate() {
-  // Header clock/date area (leave right side free for refresh indicator).
-  tft.fillRect(4, 2, 205, 24, themeHeader);
-  tft.setTextColor(themeTextMuted, themeHeader);
-  tft.drawString(getCurrentDateStringShort(), 8, 4, 1);
+  // Header date/time area (leave right side free for refresh indicator).
+  const String dateStr = getCurrentDateStringShort();
+  const String timeStr = getCurrentTimeString12h();
+
+  tft.fillRect(4, 2, 210, 24, themeHeader);
   tft.setTextColor(themeGood, themeHeader);
-  tft.drawString(getCurrentTimeString12h(), 8, 14, 2);
+  tft.drawString(dateStr, 8, 8, 2);
+
+  int timeW = tft.textWidth(timeStr, 2);
+  int timeX = tft.width() - 28 - timeW; // Keep clear of spinner at far right.
+  if (timeX < 92) timeX = 92;
+  tft.drawString(timeStr, timeX, 8, 2);
 }
 
 static void drawHeader(const char *title) {
