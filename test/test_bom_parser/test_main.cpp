@@ -139,6 +139,12 @@ void test_weather_math_helpers() {
   TEST_ASSERT_TRUE(EstimateFeelsRange("20.9", "19.7", "20", "23", fmin, fmax));
   TEST_ASSERT_EQUAL_STRING("18.8", fmin.c_str());
   TEST_ASSERT_EQUAL_STRING("21.8", fmax.c_str());
+
+  TEST_ASSERT_EQUAL_STRING("12:00:00 AM", FormatTime12h(0, 0, 0).c_str());
+  TEST_ASSERT_EQUAL_STRING("12:00:00 PM", FormatTime12h(12, 0, 0).c_str());
+  TEST_ASSERT_EQUAL_STRING("1:05:09 PM", FormatTime12h(13, 5, 9).c_str());
+  TEST_ASSERT_EQUAL_STRING("--- -- ---", FormatDateShortFromYMD(2026, 0, 1).c_str());
+  TEST_ASSERT_EQUAL_STRING("Mon 02 Mar", FormatDateShortFromYMD(2026, 3, 2).c_str());
 }
 
 void test_forecast_location_parser_success() {

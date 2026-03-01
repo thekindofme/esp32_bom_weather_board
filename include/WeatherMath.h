@@ -5,6 +5,8 @@
 bool ParseFirstFloat(const std::string& s, float& value);
 bool ParseRangeToFloats(const std::string& range, float& lo, float& hi);
 std::string FormatRangeRounded(float lo, float hi);
+std::string FormatTime12h(int hour24, int minute, int second);
+std::string FormatDateShortFromYMD(int year, int month, int day);
 std::string DayLabelFromIso(const std::string& isoLocalTime);
 bool EstimateHalfDayRainRange(const std::string& dayRange, std::string& morning, std::string& evening);
 bool EstimateFeelsRange(

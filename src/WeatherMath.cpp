@@ -32,6 +32,35 @@ std::string FormatRangeRounded(float lo, float hi) {
   return std::string(buf);
 }
 
+std::string FormatTime12h(int hour24, int minute, int second) {
+  if (hour24 < 0 || hour24 > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+    return "--:--:-- --";
+  }
+  bool pm = hour24 >= 12;
+  int hour12 = hour24 % 12;
+  if (hour12 == 0) hour12 = 12;
+  char buf[20];
+  std::snprintf(buf, sizeof(buf), "%d:%02d:%02d %s", hour12, minute, second, pm ? "PM" : "AM");
+  return std::string(buf);
+}
+
+std::string FormatDateShortFromYMD(int year, int month, int day) {
+  if (year < 1970 || month < 1 || month > 12 || day < 1 || day > 31) return "--- -- ---";
+  std::tm t = {};
+  t.tm_year = year - 1900;
+  t.tm_mon = month - 1;
+  t.tm_mday = day;
+  t.tm_isdst = -1;
+  if (std::mktime(&t) < 0) return "--- -- ---";
+  static const char* wd[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  static const char* mon[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  if (t.tm_mon < 0 || t.tm_mon > 11 || t.tm_wday < 0 || t.tm_wday > 6) return "--- -- ---";
+  char buf[24];
+  std::snprintf(buf, sizeof(buf), "%s %02d %s", wd[t.tm_wday], t.tm_mday, mon[t.tm_mon]);
+  return std::string(buf);
+}
+
 std::string DayLabelFromIso(const std::string& isoLocalTime) {
   if (isoLocalTime.size() < 10) return "--";
   std::tm t = {};

@@ -403,24 +403,20 @@ static void setBacklightPercent(uint8_t percent) {
 #endif
 }
 
-static String getCurrentTimeString() {
+static String getCurrentTimeString12h() {
   struct tm t;
   if (!getLocalTime(&t, 50)) {
-    return "--:--:--";
+    return "--:--:-- --";
   }
-  char buf[16];
-  strftime(buf, sizeof(buf), "%H:%M:%S", &t);
-  return String(buf);
+  return String(FormatTime12h(t.tm_hour, t.tm_min, t.tm_sec).c_str());
 }
 
-static String getCurrentDateString() {
+static String getCurrentDateStringShort() {
   struct tm t;
   if (!getLocalTime(&t, 50)) {
-    return "----/--/--";
+    return "--- -- ---";
   }
-  char buf[20];
-  strftime(buf, sizeof(buf), "%a %d %b %Y", &t);
-  return String(buf);
+  return String(FormatDateShortFromYMD(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday).c_str());
 }
 
 static void initThemeColors() {
@@ -482,20 +478,22 @@ static void drawWeatherIcon(int x, int y, int size, const String &iconCode) {
 }
 
 static void drawNowAndDate() {
-  tft.fillRect(8, 284, 224, 30, themePanel);
-  tft.drawRoundRect(8, 284, 224, 30, 5, themeEdge);
-  tft.setTextColor(themeGood, themePanel);
-  tft.drawString(getCurrentTimeString(), 16, 287, 2);
-  tft.drawString(getCurrentDateString(), 92, 287, 2);
+  // Header clock/date area (leave right side free for refresh indicator).
+  tft.fillRect(4, 2, 205, 24, themeHeader);
+  tft.setTextColor(themeTextMuted, themeHeader);
+  tft.drawString(getCurrentDateStringShort(), 8, 4, 1);
+  tft.setTextColor(themeGood, themeHeader);
+  tft.drawString(getCurrentTimeString12h(), 8, 14, 2);
 }
 
 static void drawHeader(const char *title) {
+  (void)title;
   tft.fillScreen(themeBg);
   tft.fillRect(0, 0, tft.width(), 30, themeHeader);
   tft.setTextColor(themeAccent, themeHeader);
   tft.setTextDatum(TL_DATUM);
-  tft.drawString(title, 8, 8, 2);
   tft.drawFastHLine(0, 28, tft.width(), themeEdge);
+  drawNowAndDate();
   drawRefreshIndicator(refreshAnimating);
 }
 
