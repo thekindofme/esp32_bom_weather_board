@@ -4,40 +4,17 @@
 #include <time.h>
 #include <WiFi.h>
 #include <TFT_eSPI.h>
+#include <Preferences.h>
 #include <string>
 
 #include "BomParser.h"
 #include "Config.h"
+#include "DisplayCommon.h"
+#include "DisplayLayout.h"
 #include "ForecastParser.h"
 #include "FtpUtils.h"
 #include "WeatherMath.h"
-
-struct WeatherData {
-  String stationName;
-  String observedTimeLocal;
-  String windDir;
-  String airTempC;
-  String apparentTempC;
-  String relHumidityPct;
-  String windKmh;
-  String rainfallMm;
-  String dayMinTempC;
-  String dayMaxTempC;
-  String feelsMinTempC;
-  String feelsMaxTempC;
-  String rainTodayRange;
-  String rainMorningRange;
-  String rainEveningRange;
-  String rainTodayChance;
-  String currentIconCode;
-  String nextDayLabel[3];
-  String nextDayIconCode[3];
-  String nextDayMinC[3];
-  String nextDayMaxC[3];
-  String nextDayRain[3];
-  String nextDayRainChance[3];
-  bool valid = false;
-};
+#include "WeatherTypes.h"
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -47,29 +24,27 @@ uint32_t lastBacklightAdjustMs = 0;
 String lastError;
 WeatherData latestData;
 bool ntpConfigured = false;
-bool refreshAnimating = false;
 uint32_t lastSpinnerMs = 0;
-uint8_t spinnerFrame = 0;
 bool hasPwmBacklight = false;
-bool isLightTheme = false;
 bool touchWasActive = false;
 uint32_t lastTouchToggleMs = 0;
-uint16_t themeBg = 0;
-uint16_t themeHeader = 0;
-uint16_t themePanel = 0;
-uint16_t themeEdge = 0;
-uint16_t themeText = 0;
-uint16_t themeTextMuted = 0;
-uint16_t themeAccent = 0;
-uint16_t themeGood = 0;
+uint32_t touchDownMs = 0;
+
+// Layout cycling
+static const LayoutFunctions *allLayouts[LAYOUT_COUNT] = {
+  &layoutHudGrid,
+  &layoutHeroTemp,
+  &layoutRainFirst,
+  &layoutNightwatch,
+  &layoutNightwatchWide,
+};
+const LayoutFunctions *activeLayout = &layoutHudGrid;
+static uint8_t currentLayoutIndex = 0;
+static Preferences prefs;
+
+#define LONG_PRESS_MS 800UL
 
 static void animateRefreshTick();
-static void drawRefreshIndicator(bool active);
-static void applyBacklightForTime();
-static void drawNowAndDate();
-static void drawWeather(const WeatherData &w);
-static void drawStatus(const String &status, const String &detail);
-static void initThemeColors();
 
 static bool waitForFtpCode(WiFiClient &control, const char *expectedPrefix, uint32_t timeoutMs, String &response) {
   uint32_t start = millis();
@@ -394,147 +369,6 @@ static bool ensureTimeConfigured() {
   return false;
 }
 
-static void setBacklightPercent(uint8_t percent) {
-#if defined(TFT_BL) && (TFT_BL >= 0)
-  percent = percent > 100 ? 100 : percent;
-  if (hasPwmBacklight) {
-    uint32_t duty = (255UL * percent) / 100UL;
-    ledcWrite(0, duty);
-  } else {
-    digitalWrite(TFT_BL, percent > 0 ? TFT_BACKLIGHT_ON : !TFT_BACKLIGHT_ON);
-  }
-#else
-  (void)percent;
-#endif
-}
-
-static String getCurrentTimeString12h() {
-  struct tm t;
-  if (!getLocalTime(&t, 50)) {
-    return "--:--:-- --";
-  }
-  return String(FormatTime12h(t.tm_hour, t.tm_min, t.tm_sec).c_str());
-}
-
-static String getCurrentDateStringShort() {
-  struct tm t;
-  if (!getLocalTime(&t, 50)) {
-    return "--- -- ---";
-  }
-  return String(FormatDateShortFromYMD(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday).c_str());
-}
-
-static void initThemeColors() {
-  if (isLightTheme) {
-    themeBg = tft.color565(225, 234, 239);
-    themeHeader = tft.color565(205, 222, 232);
-    themePanel = tft.color565(243, 248, 251);
-    themeEdge = tft.color565(98, 142, 168);
-    themeText = tft.color565(24, 48, 64);
-    themeTextMuted = tft.color565(88, 110, 124);
-    themeAccent = tft.color565(31, 104, 146);
-    themeGood = tft.color565(20, 128, 78);
-  } else {
-    // Night-first palette: muted contrast and no bright white fills.
-    themeBg = tft.color565(1, 6, 12);
-    themeHeader = tft.color565(6, 14, 22);
-    themePanel = tft.color565(9, 20, 30);
-    themeEdge = tft.color565(25, 70, 95);
-    themeText = tft.color565(180, 205, 220);
-    themeTextMuted = tft.color565(95, 130, 150);
-    themeAccent = tft.color565(120, 180, 205);
-    themeGood = tft.color565(105, 185, 135);
-  }
-}
-
-static void drawWeatherIcon(int x, int y, int size, const String &iconCode) {
-  int code = iconCode.toInt();
-  uint16_t sun = tft.color565(255, 196, 0);
-  uint16_t cloud = tft.color565(170, 195, 215);
-  uint16_t rain = tft.color565(90, 180, 255);
-  uint16_t storm = tft.color565(255, 120, 40);
-
-  auto drawSun = [&](int cx, int cy, int r) {
-    tft.fillCircle(cx, cy, r, sun);
-    for (int i = 0; i < 8; ++i) {
-      float a = i * 3.14159f / 4.0f;
-      int x1 = cx + (int)((r + 2) * cosf(a));
-      int y1 = cy + (int)((r + 2) * sinf(a));
-      int x2 = cx + (int)((r + 7) * cosf(a));
-      int y2 = cy + (int)((r + 7) * sinf(a));
-      tft.drawLine(x1, y1, x2, y2, sun);
-    }
-  };
-
-  auto drawCloud = [&](int cx, int cy) {
-    tft.fillCircle(cx - 8, cy, 7, cloud);
-    tft.fillCircle(cx, cy - 4, 9, cloud);
-    tft.fillCircle(cx + 10, cy, 7, cloud);
-    tft.fillRoundRect(cx - 16, cy, 34, 11, 5, cloud);
-  };
-
-  if (code == 16 || code == 17) {
-    drawCloud(x + size / 2, y + size / 2 - 2);
-    tft.fillTriangle(x + size / 2 - 3, y + size / 2 + 10, x + size / 2 + 3, y + size / 2 + 10, x + size / 2 - 1, y + size / 2 + 18, storm);
-    return;
-  }
-  if (code == 12 || code == 13 || code == 14) {
-    drawCloud(x + size / 2, y + size / 2 - 4);
-    tft.drawLine(x + size / 2 - 8, y + size / 2 + 10, x + size / 2 - 12, y + size / 2 + 16, rain);
-    tft.drawLine(x + size / 2, y + size / 2 + 10, x + size / 2 - 4, y + size / 2 + 16, rain);
-    tft.drawLine(x + size / 2 + 8, y + size / 2 + 10, x + size / 2 + 4, y + size / 2 + 16, rain);
-    return;
-  }
-  if (code == 3 || code == 4 || code == 6 || code == 7 || code == 8) {
-    drawSun(x + 12, y + 12, 6);
-    drawCloud(x + size / 2 + 4, y + size / 2 - 2);
-    return;
-  }
-  drawSun(x + size / 2, y + size / 2, 8);
-}
-
-static void drawNowAndDate() {
-  // Header date/time area (leave right side free for refresh indicator).
-  const String dateStr = getCurrentDateStringShort();
-  const String timeStr = getCurrentTimeString12h();
-
-  tft.fillRect(4, 2, 210, 24, themeHeader);
-  tft.setTextColor(themeGood, themeHeader);
-  tft.drawString(dateStr, 8, 8, 2);
-
-  int timeW = tft.textWidth(timeStr, 2);
-  int timeX = tft.width() - 28 - timeW; // Keep clear of spinner at far right.
-  if (timeX < 92) timeX = 92;
-  tft.drawString(timeStr, timeX, 8, 2);
-}
-
-static void drawHeader(const char *title) {
-  (void)title;
-  tft.fillScreen(themeBg);
-  tft.fillRect(0, 0, tft.width(), 30, themeHeader);
-  tft.setTextColor(themeAccent, themeHeader);
-  tft.setTextDatum(TL_DATUM);
-  tft.drawFastHLine(0, 28, tft.width(), themeEdge);
-  drawNowAndDate();
-  drawRefreshIndicator(refreshAnimating);
-}
-
-static void drawRefreshIndicator(bool active) {
-  const int cx = 223;
-  const int cy = 14;
-  const int r = 7;
-  static const int8_t dx[8] = {0, 4, 6, 4, 0, -4, -6, -4};
-  static const int8_t dy[8] = {-6, -4, 0, 4, 6, 4, 0, -4};
-
-  tft.fillCircle(cx, cy, r + 2, themeHeader);
-  tft.drawCircle(cx, cy, r, themeEdge);
-  if (!active) return;
-
-  for (int i = 0; i < 8; ++i) {
-    uint16_t c = (i == spinnerFrame) ? themeAccent : themeTextMuted;
-    tft.fillCircle(cx + dx[i], cy + dy[i], (i == spinnerFrame) ? 2 : 1, c);
-  }
-}
 
 static void animateRefreshTick() {
   if (!refreshAnimating) return;
@@ -542,125 +376,72 @@ static void animateRefreshTick() {
   if (now - lastSpinnerMs < 120UL) return;
   lastSpinnerMs = now;
   spinnerFrame = (spinnerFrame + 1) % 8;
-  drawRefreshIndicator(true);
-}
-
-static void applyBacklightForTime() {
-#if defined(TFT_BL) && (TFT_BL >= 0)
-  uint8_t level = isLightTheme ? 60 : 30;
-  struct tm t;
-  if (getLocalTime(&t, 20)) {
-    // Darker at night to reduce emitted light.
-    if (t.tm_hour >= 20 || t.tm_hour < 6) level = isLightTheme ? 35 : 8;
-    else if (t.tm_hour >= 6 && t.tm_hour < 9) level = isLightTheme ? 50 : 18;
-    else level = isLightTheme ? 70 : 35;
-  }
-  setBacklightPercent(level);
-#endif
+  activeLayout->drawRefreshIndicator(tft, true, spinnerFrame);
 }
 
 static void applyThemeAndRedraw() {
-  initThemeColors();
+  initThemeColors(tft);
   applyBacklightForTime();
   if (latestData.valid) {
-    drawWeather(latestData);
+    activeLayout->drawWeather(tft, latestData);
   } else {
-    drawStatus("Ready", "Waiting for first weather update");
+    activeLayout->drawStatus(tft, "Ready", "Waiting for first weather update");
   }
 }
 
-static void pollTouchThemeToggle() {
+static void applyLayoutRotation() {
+  tft.setRotation(activeLayout->rotation);
+}
+
+static void cycleLayout() {
+  currentLayoutIndex = (currentLayoutIndex + 1) % LAYOUT_COUNT;
+  activeLayout = allLayouts[currentLayoutIndex];
+  prefs.putUChar("layout", currentLayoutIndex);
+  applyLayoutRotation();
+  applyThemeAndRedraw();
+}
+
+static void pollTouchActions() {
   // XPT2046 IRQ is active low while the panel is touched.
   const bool touchActive = (digitalRead(TOUCH_IRQ_PIN) == LOW);
   const uint32_t now = millis();
 
-  if (touchActive && !touchWasActive && (now - lastTouchToggleMs >= TOUCH_TOGGLE_DEBOUNCE_MS)) {
-    isLightTheme = !isLightTheme;
+  if (touchActive && !touchWasActive) {
+    // Finger just went down
+    touchDownMs = now;
+  } else if (!touchActive && touchWasActive && (now - lastTouchToggleMs >= TOUCH_TOGGLE_DEBOUNCE_MS)) {
+    // Finger just lifted
+    uint32_t held = now - touchDownMs;
     lastTouchToggleMs = now;
-    applyThemeAndRedraw();
+    if (held >= LONG_PRESS_MS) {
+      // Long press: cycle layout
+      cycleLayout();
+    } else {
+      // Short tap: toggle theme
+      isLightTheme = !isLightTheme;
+      applyThemeAndRedraw();
+    }
   }
   touchWasActive = touchActive;
-}
-
-static void drawWeather(const WeatherData &w) {
-  drawHeader("BOM Weather");
-
-  uint16_t card = themePanel;
-  uint16_t cardEdge = themeEdge;
-
-  // Main card
-  tft.fillRoundRect(8, 36, 224, 130, 8, card);
-  tft.drawRoundRect(8, 36, 224, 130, 8, cardEdge);
-  tft.setTextColor(themeText, card);
-  tft.drawString(w.stationName, 16, 42, 2);
-  drawWeatherIcon(176, 50, 42, w.currentIconCode);
-
-  tft.setTextColor(tft.color565(210, 196, 120), card);
-  tft.drawString(w.airTempC + "C", 16, 66, 4);
-  tft.setTextColor(themeAccent, card);
-  tft.drawString("Feels " + w.apparentTempC + "C", 16, 102, 2);
-
-  tft.setTextColor(themeTextMuted, card);
-  tft.drawString("T " + w.dayMinTempC + "-" + w.dayMaxTempC + "C", 16, 124, 1);
-  tft.drawString("F~ " + w.feelsMinTempC + "-" + w.feelsMaxTempC + "C", 120, 124, 1);
-
-  // Details strip
-  tft.fillRoundRect(8, 172, 224, 46, 7, card);
-  tft.drawRoundRect(8, 172, 224, 46, 7, cardEdge);
-  tft.setTextColor(themeText, card);
-  tft.drawString("Hum " + w.relHumidityPct + "%", 14, 178, 2);
-  tft.drawString("Wind " + w.windDir + " " + w.windKmh + "km/h", 110, 178, 2);
-  tft.drawString("Rain day " + w.rainTodayRange, 14, 196, 1);
-  tft.drawString("AM~ " + w.rainMorningRange + " PM~ " + w.rainEveningRange, 118, 196, 1);
-
-  // Next days cards
-  tft.setTextColor(themeAccent, themeBg);
-  tft.drawString("Next 3 Days", 8, 224, 2);
-  for (int i = 0; i < 3; ++i) {
-    int x = 8 + i * 76;
-    int y = 246;
-    tft.fillRoundRect(x, y, 72, 34, 6, card);
-    tft.drawRoundRect(x, y, 72, 34, 6, cardEdge);
-    drawWeatherIcon(x + 2, y + 2, 20, w.nextDayIconCode[i]);
-    tft.setTextColor(themeText, card);
-    String label = w.nextDayLabel[i].isEmpty() ? String("D+") + String(i + 1) : w.nextDayLabel[i];
-    tft.drawString(label, x + 24, y + 3, 1);
-    tft.drawString(w.nextDayMinC[i] + "-" + w.nextDayMaxC[i] + "C", x + 24, y + 14, 1);
-    String rain = w.nextDayRain[i].isEmpty() ? w.nextDayRainChance[i] : w.nextDayRain[i];
-    if (rain.isEmpty()) rain = "--";
-    tft.drawString(rain, x + 24, y + 24, 1);
-  }
-
-  tft.setTextColor(themeTextMuted, themeBg);
-  tft.drawString("Obs " + w.observedTimeLocal, 8, 314, 1);
-  drawNowAndDate();
-}
-
-static void drawStatus(const String &status, const String &detail) {
-  drawHeader("ESP32 BOM Weather");
-  tft.setTextColor(themeAccent, themeBg);
-  tft.drawString(status, 8, 54, 2);
-  tft.setTextColor(themeText, themeBg);
-  tft.drawString(detail, 8, 84, 2);
 }
 
 static void refreshWeatherNow() {
   Serial.println("[weather] refresh start");
   refreshAnimating = true;
   spinnerFrame = 0;
-  drawRefreshIndicator(true);
+  activeLayout->drawRefreshIndicator(tft, true, spinnerFrame);
   if (!ensureWifiConnected()) {
     lastError = "Wi-Fi connect timeout";
     Serial.println("[weather] wifi failed");
     if (latestData.valid) {
-      drawWeather(latestData);
+      activeLayout->drawWeather(tft, latestData);
       tft.setTextColor(TFT_RED, TFT_BLACK);
       tft.drawString("WARN: " + lastError, 8, 186, 2);
     } else {
-      drawStatus("Wi-Fi failed", lastError);
+      activeLayout->drawStatus(tft, "Wi-Fi failed", lastError);
     }
     refreshAnimating = false;
-    drawRefreshIndicator(false);
+    activeLayout->drawRefreshIndicator(tft, false, spinnerFrame);
     return;
   }
 
@@ -704,21 +485,21 @@ static void refreshWeatherNow() {
     latestData = fresh;
     lastError = "";
     Serial.println("[weather] fetch success");
-    drawWeather(latestData);
+    activeLayout->drawWeather(tft, latestData);
   } else {
     lastError = err;
     Serial.print("[weather] fetch failed: ");
     Serial.println(lastError);
     if (latestData.valid) {
-      drawWeather(latestData);
+      activeLayout->drawWeather(tft, latestData);
       tft.setTextColor(TFT_RED, TFT_BLACK);
       tft.drawString("WARN: " + lastError, 8, 186, 2);
     } else {
-      drawStatus("BOM fetch failed", lastError);
+      activeLayout->drawStatus(tft, "BOM fetch failed", lastError);
     }
   }
   refreshAnimating = false;
-  drawRefreshIndicator(false);
+  activeLayout->drawRefreshIndicator(tft, false, spinnerFrame);
 }
 
 void setup() {
@@ -727,7 +508,6 @@ void setup() {
   Serial.println("[boot] setup start");
 
   tft.init();
-  tft.setRotation(0); // 240x320 portrait
   tft.invertDisplay(false);
 
 #if defined(TFT_BL) && (TFT_BL >= 0)
@@ -738,8 +518,16 @@ void setup() {
 #endif
 
   pinMode(TOUCH_IRQ_PIN, INPUT);
-  initThemeColors();
-  drawStatus("Booting", "Starting Wi-Fi and display");
+
+  // Restore saved layout from NVS
+  prefs.begin("weather", false);
+  currentLayoutIndex = prefs.getUChar("layout", 0);
+  if (currentLayoutIndex >= LAYOUT_COUNT) currentLayoutIndex = 0;
+  activeLayout = allLayouts[currentLayoutIndex];
+  applyLayoutRotation();
+
+  initThemeColors(tft);
+  activeLayout->drawStatus(tft, "Booting", "Starting Wi-Fi and display");
   Serial.println("[boot] display init done");
   refreshWeatherNow();
   lastRefreshMs = millis();
@@ -749,9 +537,9 @@ void setup() {
 
 void loop() {
   const uint32_t now = millis();
-  pollTouchThemeToggle();
+  pollTouchActions();
   if (latestData.valid && now - lastClockUpdateMs >= 1000UL) {
-    drawNowAndDate();
+    activeLayout->drawNowAndDate(tft);
     lastClockUpdateMs = now;
   }
   if (now - lastBacklightAdjustMs >= 60000UL) {

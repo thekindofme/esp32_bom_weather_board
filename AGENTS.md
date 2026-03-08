@@ -31,15 +31,34 @@ Reference: `HARDWARE_SPEC.md`
 
 ## Repository layout
 
+### Architecture: shared core + pluggable layouts
+
+The firmware is split into a shared core (data, WiFi, NTP, touch, loop) and
+pluggable layout files. Only ONE layout `.cpp` is compiled per build, selected
+via PlatformIO environment.
+
 - `src/main.cpp`
-  - Firmware entrypoint.
-  - Wi-Fi connect/reconnect, BOM FTP fetch, display rendering loop.
-  - Also includes:
-    - NTP time/date sync and display
-    - Forecast parsing for daily rain/next 3 days
-    - dark-mode palette and time-based backlight dimming
-    - touch IRQ edge-detect + debounce for theme toggle
-    - integrated refresh spinner (no blank update screen)
+  - Firmware entrypoint (core only, no drawing).
+  - Wi-Fi connect/reconnect, BOM FTP fetch, NTP, touch theme toggle, main loop.
+  - Calls `layoutDraw*()` functions declared in `DisplayLayout.h`.
+- `src/DisplayCommon.cpp` + `include/DisplayCommon.h`
+  - Shared drawing helpers available to all layouts:
+    - Theme color globals and `initThemeColors()`
+    - `drawWeatherIcon()`, `setBacklightPercent()`, `applyBacklightForTime()`
+    - `getCurrentTimeString12h()`, `getCurrentDateStringShort()`
+    - State globals: `isLightTheme`, `refreshAnimating`, `spinnerFrame`
+- `include/WeatherTypes.h`
+  - `WeatherData` struct shared between core and layouts.
+- `include/DisplayLayout.h`
+  - Declares the 5 functions each layout must implement:
+    - `layoutDrawWeather()`, `layoutDrawHeader()`, `layoutDrawNowAndDate()`
+    - `layoutDrawStatus()`, `layoutDrawRefreshIndicator()`
+- `src/layouts/LayoutHeroTemp.cpp`
+  - Layout A: temperature-dominant, big temp readable from across the room.
+- `src/layouts/LayoutRainFirst.cpp`
+  - Layout B: rain-focused with 96px hero rain band. Perfect for Melbourne.
+- `src/layouts/LayoutHudGrid.cpp`
+  - Layout C: information-dense grid, instrument panel style.
 - `include/Config.h`
   - Runtime configuration: Wi-Fi credentials, BOM file path, station ID, refresh intervals.
   - Includes touch-toggle settings:
@@ -59,7 +78,7 @@ Reference: `HARDWARE_SPEC.md`
   - Storage location for listing screenshots (pin map/spec tables).
 - `platformio.ini`
   - PlatformIO environments:
-    - `esp32dev` for firmware build/upload.
+    - `hero_temp` / `rain_first` / `hud_grid` for firmware build/upload (select layout).
     - `native` for host-side tests.
 
 ## BOM integration details
@@ -101,14 +120,21 @@ Refresh BOM fixture snapshot:
 curl -s ftp://ftp.bom.gov.au/anon/gen/fwo/IDV60920.xml > test/fixtures/IDV60920_live_YYYY-MM-DD.xml
 ```
 
-Build firmware:
+Build firmware (pick a layout):
 ```bash
-.venv/bin/pio run -e esp32dev
+.venv/bin/pio run -e hero_temp
+.venv/bin/pio run -e rain_first
+.venv/bin/pio run -e hud_grid
 ```
 
-Upload firmware:
+Build all layouts:
 ```bash
-.venv/bin/pio run -e esp32dev -t upload --upload-port /dev/ttyUSB0
+.venv/bin/pio run -e hero_temp && .venv/bin/pio run -e rain_first && .venv/bin/pio run -e hud_grid
+```
+
+Upload firmware (pick a layout):
+```bash
+.venv/bin/pio run -e hero_temp -t upload --upload-port /dev/ttyUSB0
 ```
 
 Serial monitor:
@@ -152,7 +178,8 @@ Current orientation in app:
   - Use `include/ConfigLocal.example.h` as the template.
 - Before finishing substantive changes:
   - Run `pio test -e native`.
-  - If runtime code changed, run at least `pio run -e esp32dev` (when toolchain is available).
+  - If runtime code changed, run at least `pio run -e hero_temp` (when toolchain is available).
+  - If layout code changed, build the affected layout env(s) to verify.
 
 ## Known gaps / TODO
 
