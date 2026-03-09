@@ -379,6 +379,7 @@ func renderElement(sb *strings.Builder, el models.Element, hasWeatherData bool) 
 
 	case "time":
 		font := getPropInt(props, "font", 2)
+		textSize := getPropInt(props, "textSize", 1)
 		color := resolveColor(getPropStr(props, "color", "themeGood"))
 		bgColor := resolveColor(getPropStr(props, "bgColor", "themeHeader"))
 		timeFormat := getPropStr(props, "format", "12h")
@@ -386,6 +387,9 @@ func renderElement(sb *strings.Builder, el models.Element, hasWeatherData bool) 
 
 		sb.WriteString(fmt.Sprintf("  {\n    tft.fillRect(%d, %d, %d, %d, %s);\n", el.X, el.Y, el.Width, el.Height, bgColor))
 		sb.WriteString(fmt.Sprintf("    tft.setTextColor(%s, %s);\n", color, bgColor))
+		if textSize > 1 {
+			sb.WriteString(fmt.Sprintf("    tft.setTextSize(%d);\n", textSize))
+		}
 
 		if timeFormat == "24h" {
 			if showSeconds {
@@ -397,7 +401,7 @@ func renderElement(sb *strings.Builder, el models.Element, hasWeatherData bool) 
 				sb.WriteString("    struct tm ti; getLocalTime(&ti);\n")
 				sb.WriteString("    snprintf(timeBuf, sizeof(timeBuf), \"%02d:%02d\", ti.tm_hour, ti.tm_min);\n")
 			}
-			sb.WriteString(fmt.Sprintf("    tft.drawString(timeBuf, %d, %d, %d);\n  }\n\n", el.X, el.Y, font))
+			sb.WriteString(fmt.Sprintf("    tft.drawString(timeBuf, %d, %d, %d);\n", el.X, el.Y, font))
 		} else {
 			if showSeconds {
 				sb.WriteString("    const String timeStr = getCurrentTimeString12h();\n")
@@ -411,17 +415,25 @@ func renderElement(sb *strings.Builder, el models.Element, hasWeatherData bool) 
 				sb.WriteString("      if (space > 0) timeStr = timeStr.substring(0, secondColon) + timeStr.substring(space);\n")
 				sb.WriteString("    }\n")
 			}
-			sb.WriteString(fmt.Sprintf("    tft.drawString(timeStr, %d, %d, %d);\n  }\n\n", el.X, el.Y, font))
+			sb.WriteString(fmt.Sprintf("    tft.drawString(timeStr, %d, %d, %d);\n", el.X, el.Y, font))
 		}
+		if textSize > 1 {
+			sb.WriteString("    tft.setTextSize(1);\n")
+		}
+		sb.WriteString("  }\n\n")
 
 	case "date":
 		font := getPropInt(props, "font", 2)
+		textSize := getPropInt(props, "textSize", 1)
 		color := resolveColor(getPropStr(props, "color", "themeGood"))
 		bgColor := resolveColor(getPropStr(props, "bgColor", "themeHeader"))
 		dateFormat := getPropStr(props, "dateFormat", "short")
 
 		sb.WriteString(fmt.Sprintf("  {\n    tft.fillRect(%d, %d, %d, %d, %s);\n", el.X, el.Y, el.Width, el.Height, bgColor))
 		sb.WriteString(fmt.Sprintf("    tft.setTextColor(%s, %s);\n", color, bgColor))
+		if textSize > 1 {
+			sb.WriteString(fmt.Sprintf("    tft.setTextSize(%d);\n", textSize))
+		}
 
 		switch dateFormat {
 		case "long":
@@ -436,10 +448,18 @@ func renderElement(sb *strings.Builder, el models.Element, hasWeatherData bool) 
 			sb.WriteString("    snprintf(dateBuf, sizeof(dateBuf), \"%02d/%02d/%04d\", ti.tm_mday, ti.tm_mon + 1, ti.tm_year + 1900);\n")
 		default:
 			sb.WriteString("    const String dateStr = getCurrentDateStringShort();\n")
-			sb.WriteString(fmt.Sprintf("    tft.drawString(dateStr, %d, %d, %d);\n  }\n\n", el.X, el.Y, font))
+			sb.WriteString(fmt.Sprintf("    tft.drawString(dateStr, %d, %d, %d);\n", el.X, el.Y, font))
+			if textSize > 1 {
+				sb.WriteString("    tft.setTextSize(1);\n")
+			}
+			sb.WriteString("  }\n\n")
 			return
 		}
-		sb.WriteString(fmt.Sprintf("    tft.drawString(dateBuf, %d, %d, %d);\n  }\n\n", el.X, el.Y, font))
+		sb.WriteString(fmt.Sprintf("    tft.drawString(dateBuf, %d, %d, %d);\n", el.X, el.Y, font))
+		if textSize > 1 {
+			sb.WriteString("    tft.setTextSize(1);\n")
+		}
+		sb.WriteString("  }\n\n")
 	}
 }
 

@@ -58,3 +58,63 @@ func TestGenerateLayoutCppUsesStableGeneratedSymbolsAndEscapedName(t *testing.T)
 		t.Fatalf("generated code should not use layout-name-derived exported symbol\n%s", code)
 	}
 }
+
+func TestGenerateLayoutCppAppliesTextSizeToTimeAndDate(t *testing.T) {
+	layout := &models.Layout{
+		Name:            "Scaled Clock",
+		Orientation:     "portrait",
+		Width:           240,
+		Height:          320,
+		Rotation:        0,
+		BackgroundColor: "themeBg",
+		Elements: []models.Element{
+			{
+				ID:     "time-1",
+				Type:   "time",
+				X:      8,
+				Y:      8,
+				Width:  120,
+				Height: 28,
+				ZIndex: 1,
+				Properties: map[string]interface{}{
+					"font":        2,
+					"textSize":    3,
+					"format":      "24h",
+					"showSeconds": false,
+				},
+			},
+			{
+				ID:     "date-1",
+				Type:   "date",
+				X:      8,
+				Y:      40,
+				Width:  160,
+				Height: 28,
+				ZIndex: 2,
+				Properties: map[string]interface{}{
+					"font":       2,
+					"textSize":   4,
+					"dateFormat": "short",
+				},
+			},
+		},
+	}
+
+	code := GenerateLayoutCpp(layout)
+
+	checks := []string{
+		`    tft.setTextSize(3);`,
+		`    tft.drawString(timeBuf, 8, 8, 2);`,
+		`    tft.setTextSize(4);`,
+		`    tft.drawString(dateStr, 8, 40, 2);`,
+	}
+	for _, needle := range checks {
+		if !strings.Contains(code, needle) {
+			t.Fatalf("generated code missing %q\n%s", needle, code)
+		}
+	}
+
+	if got := strings.Count(code, `    tft.setTextSize(1);`); got < 2 {
+		t.Fatalf("expected generated code to reset text size after scaled time/date draws, got %d\n%s", got, code)
+	}
+}
