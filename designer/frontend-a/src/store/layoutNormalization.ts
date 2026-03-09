@@ -1,15 +1,28 @@
 import type { Layout, LayoutElement } from '../api/client';
 
+const TEXT_SIZE_MIN = 1;
+const TEXT_SIZE_MAX = 6;
+
 function asInt(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.round(value)
     : fallback;
 }
 
+function clampTextSize(value: unknown, fallback = TEXT_SIZE_MIN): number {
+  return Math.max(TEXT_SIZE_MIN, Math.min(TEXT_SIZE_MAX, asInt(value, fallback)));
+}
+
 export function normalizeElement(element: LayoutElement): LayoutElement {
   const properties = { ...element.properties };
 
   switch (element.type) {
+    case 'data-text':
+    case 'static-text':
+    case 'time':
+    case 'date':
+      properties.textSize = clampTextSize(properties.textSize);
+      return { ...element, properties };
     case 'weather-icon': {
       const fallbackSize = Math.max(16, Math.min(element.width, element.height) || 48);
       const iconSize = Math.max(16, asInt(properties.iconSize, fallbackSize));

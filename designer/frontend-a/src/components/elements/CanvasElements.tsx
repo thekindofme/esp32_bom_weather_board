@@ -178,11 +178,12 @@ function WeatherIconElement({ element: el, isDark }: { element: LayoutElement; i
 }
 
 function TimeElement({ element: el, isDark }: { element: LayoutElement; isDark: boolean }) {
-  const { font, color, bgColor, format, showSeconds } = el.properties as Record<string, unknown>;
+  const { font, textSize, color, bgColor, format, showSeconds } = el.properties as Record<string, unknown>;
   const f = (font as number) || 2;
+  const ts = (textSize as number) || 1;
   const resolvedColor = resolveColor((color as string) || 'themeGood', isDark);
   const resolvedBg = resolveColor((bgColor as string) || 'themeHeader', isDark);
-  const fontSize = getFontSize(f, 1);
+  const fontSize = getFontSize(f, ts);
   const is24h = (format as string) === '24h';
   const showSec = (showSeconds as boolean) !== false;
   let timeText: string;
@@ -200,11 +201,12 @@ function TimeElement({ element: el, isDark }: { element: LayoutElement; isDark: 
 }
 
 function DateElement({ element: el, isDark }: { element: LayoutElement; isDark: boolean }) {
-  const { font, color, bgColor, dateFormat } = el.properties as Record<string, unknown>;
+  const { font, textSize, color, bgColor, dateFormat } = el.properties as Record<string, unknown>;
   const f = (font as number) || 2;
+  const ts = (textSize as number) || 1;
   const resolvedColor = resolveColor((color as string) || 'themeGood', isDark);
   const resolvedBg = resolveColor((bgColor as string) || 'themeHeader', isDark);
-  const fontSize = getFontSize(f, 1);
+  const fontSize = getFontSize(f, ts);
   const fmt = (dateFormat as string) || 'short';
   let dateText: string;
   if (fmt === 'long') {

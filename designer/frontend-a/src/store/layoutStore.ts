@@ -74,9 +74,9 @@ function defaultElementForType(type: string, x: number, y: number): LayoutElemen
     case 'forecast-card':
       return { ...base, width: 232, height: 80, properties: { cardWidth: 76, cardHeight: 58, cardSpacing: 2, cornerRadius: 6, cardBg: 'themePanel', cardBorder: 'themeEdge', labelColor: 'themeAccent', tempColor: 'themeText', rainColor: 'themeTextMuted' } };
     case 'time':
-      return { ...base, width: 100, height: 20, properties: { font: 2, color: 'themeGood', bgColor: 'themeHeader', format: '12h', showSeconds: true } };
+      return { ...base, width: 100, height: 20, properties: { font: 2, textSize: 1, color: 'themeGood', bgColor: 'themeHeader', format: '12h', showSeconds: true } };
     case 'date':
-      return { ...base, width: 100, height: 20, properties: { font: 2, color: 'themeGood', bgColor: 'themeHeader', dateFormat: 'short' } };
+      return { ...base, width: 100, height: 20, properties: { font: 2, textSize: 1, color: 'themeGood', bgColor: 'themeHeader', dateFormat: 'short' } };
     default:
       return { ...base, width: 80, height: 30, properties: {} };
   }

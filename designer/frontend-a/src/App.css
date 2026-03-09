@@ -443,6 +443,12 @@ body {
   margin-bottom: 8px;
 }
 
+.position-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .prop-field {
   margin-bottom: 8px;
 }

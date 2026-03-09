@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLayoutStore } from '../store/layoutStore';
 import { THEME_SWATCHES, DARK_THEME, LIGHT_THEME, type ThemeColorName } from '../utils/themeColors';
-import { DATA_FIELDS, FONT_METRICS } from '../utils/fontMetrics';
+import { DATA_FIELDS, FONT_METRICS, TEXT_SIZE_MAX, TEXT_SIZE_MIN } from '../utils/fontMetrics';
 
 function ColorPicker({
   value,
@@ -121,9 +121,16 @@ function TextInput({
   );
 }
 
+function clampTextSize(value: number): number {
+  if (!Number.isFinite(value)) return TEXT_SIZE_MIN;
+  return Math.max(TEXT_SIZE_MIN, Math.min(TEXT_SIZE_MAX, Math.round(value)));
+}
+
 export const PropertyInspector: React.FC = () => {
   const selectedIds = useLayoutStore(s => s.selectedIds);
   const layout = useLayoutStore(s => s.layout);
+  const snapToGrid = useLayoutStore(s => s.snapToGrid);
+  const gridSize = useLayoutStore(s => s.gridSize);
   const updateElement = useLayoutStore(s => s.updateElement);
   const updateElementProperty = useLayoutStore(s => s.updateElementProperty);
   const removeElement = useLayoutStore(s => s.removeElement);
@@ -161,6 +168,17 @@ export const PropertyInspector: React.FC = () => {
 
   const props = el.properties as Record<string, unknown>;
   const setProp = (key: string, value: unknown) => updateElementProperty(el.id, key, value);
+  const snapCoordinate = (value: number) => {
+    const next = Math.max(0, value);
+    return snapToGrid ? Math.round(next / gridSize) * gridSize : Math.round(next);
+  };
+  const centerElement = (axis: 'horizontal' | 'vertical') => {
+    if (axis === 'horizontal') {
+      updateElement(el.id, { x: snapCoordinate((layout.width - el.width) / 2) });
+      return;
+    }
+    updateElement(el.id, { y: snapCoordinate((layout.height - el.height) / 2) });
+  };
 
   const fontOptions = Object.entries(FONT_METRICS).map(([k, v]) => ({
     value: k,
@@ -184,6 +202,10 @@ export const PropertyInspector: React.FC = () => {
           <NumberInput label="H" value={el.height} onChange={v => updateElement(el.id, { height: v })} min={1} />
         </div>
         <NumberInput label="Z-Index" value={el.zIndex} onChange={v => updateElement(el.id, { zIndex: v })} />
+        <div className="position-actions">
+          <button className="btn-secondary" onClick={() => centerElement('horizontal')}>Center H</button>
+          <button className="btn-secondary" onClick={() => centerElement('vertical')}>Center V</button>
+        </div>
       </div>
 
       {/* Type-specific properties */}
@@ -204,11 +226,12 @@ export const PropertyInspector: React.FC = () => {
               options={fontOptions}
               onChange={v => setProp('font', Number(v))}
             />
-            <SelectInput
+            <NumberInput
               label="Text Size"
-              value={String((props.textSize as number) || 1)}
-              options={[{ value: '1', label: '1x' }, { value: '2', label: '2x' }]}
-              onChange={v => setProp('textSize', Number(v))}
+              value={(props.textSize as number) || 1}
+              onChange={v => setProp('textSize', clampTextSize(v))}
+              min={TEXT_SIZE_MIN}
+              max={TEXT_SIZE_MAX}
             />
             <TextInput label="Prefix" value={(props.prefix as string) || ''} onChange={v => setProp('prefix', v)} />
             <TextInput label="Suffix" value={(props.suffix as string) || ''} onChange={v => setProp('suffix', v)} />
@@ -232,11 +255,12 @@ export const PropertyInspector: React.FC = () => {
               options={fontOptions}
               onChange={v => setProp('font', Number(v))}
             />
-            <SelectInput
+            <NumberInput
               label="Text Size"
-              value={String((props.textSize as number) || 1)}
-              options={[{ value: '1', label: '1x' }, { value: '2', label: '2x' }]}
-              onChange={v => setProp('textSize', Number(v))}
+              value={(props.textSize as number) || 1}
+              onChange={v => setProp('textSize', clampTextSize(v))}
+              min={TEXT_SIZE_MIN}
+              max={TEXT_SIZE_MAX}
             />
             <ColorPicker label="Color" value={(props.color as string) || 'themeText'} onChange={v => setProp('color', v)} isDark={isDark} />
             <ColorPicker label="Bg Color" value={(props.bgColor as string) || 'themeBg'} onChange={v => setProp('bgColor', v)} isDark={isDark} />
@@ -286,6 +310,13 @@ export const PropertyInspector: React.FC = () => {
               value={String((props.font as number) || 2)}
               options={fontOptions}
               onChange={v => setProp('font', Number(v))}
+            />
+            <NumberInput
+              label="Text Size"
+              value={(props.textSize as number) || 1}
+              onChange={v => setProp('textSize', clampTextSize(v))}
+              min={TEXT_SIZE_MIN}
+              max={TEXT_SIZE_MAX}
             />
             <ColorPicker label="Color" value={(props.color as string) || 'themeGood'} onChange={v => setProp('color', v)} isDark={isDark} />
             <ColorPicker label="Bg Color" value={(props.bgColor as string) || 'themeHeader'} onChange={v => setProp('bgColor', v)} isDark={isDark} />
