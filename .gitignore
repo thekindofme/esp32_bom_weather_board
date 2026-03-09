@@ -18,3 +18,10 @@ include/ConfigLocal.h
 # OS
 .DS_Store
 Thumbs.db
+
+# Designer web app
+designer/backend/layouts.db
+designer/frontend-a/node_modules/
+designer/frontend-a/dist/
+designer/frontend-b/node_modules/
+designer/frontend-b/dist/
