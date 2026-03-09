@@ -1,5 +1,8 @@
 export interface FontInfo { charWidth: number; charHeight: number; label: string; }
 
+export const TEXT_SIZE_MIN = 1;
+export const TEXT_SIZE_MAX = 6;
+
 export const FONT_METRICS: Record<number, FontInfo> = {
   1: { charWidth: 6, charHeight: 8, label: 'Small (8px)' },
   2: { charWidth: 11, charHeight: 16, label: 'Medium (16px)' },

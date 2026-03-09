@@ -510,6 +510,13 @@ body {
 }
 .pf input[type="number"] { width: 70px; }
 
+.pf-axis-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.pf-axis-actions .btn-outline { flex: 1; }
+
 .pf-swatches {
   display: flex;
   gap: 3px;

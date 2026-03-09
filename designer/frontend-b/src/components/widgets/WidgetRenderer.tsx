@@ -131,7 +131,8 @@ export const WidgetRenderer: React.FC<Props> = ({ element: el, isDark }) => {
       );
     }
     case 'time': {
-      const fontSize = getFontSize((p.font as number) || 2, 1);
+      const font = (p.font as number) || 2;
+      const fontSize = getFontSize(font, (p.textSize as number) || 1);
       const is24h = (p.format as string) === '24h';
       const showSec = (p.showSeconds as boolean) !== false;
       let timeText: string;
@@ -145,12 +146,13 @@ export const WidgetRenderer: React.FC<Props> = ({ element: el, isDark }) => {
           width: '100%', height: '100%',
           color: resolveColor((p.color as string) || 'themeGood', isDark),
           backgroundColor: resolveColor((p.bgColor as string) || 'themeHeader', isDark),
-          fontSize, display: 'flex', alignItems: 'center', fontFamily: 'sans-serif',
+          fontSize, display: 'flex', alignItems: 'center', fontFamily: font === 1 ? 'monospace' : 'sans-serif',
         }}>{timeText}</div>
       );
     }
     case 'date': {
-      const fontSize = getFontSize((p.font as number) || 2, 1);
+      const font = (p.font as number) || 2;
+      const fontSize = getFontSize(font, (p.textSize as number) || 1);
       const dateFormat = (p.dateFormat as string) || 'short';
       let dateText: string;
       if (dateFormat === 'long') {
@@ -165,7 +167,7 @@ export const WidgetRenderer: React.FC<Props> = ({ element: el, isDark }) => {
           width: '100%', height: '100%',
           color: resolveColor((p.color as string) || 'themeGood', isDark),
           backgroundColor: resolveColor((p.bgColor as string) || 'themeHeader', isDark),
-          fontSize, display: 'flex', alignItems: 'center', fontFamily: 'sans-serif',
+          fontSize, display: 'flex', alignItems: 'center', fontFamily: font === 1 ? 'monospace' : 'sans-serif',
         }}>{dateText}</div>
       );
     }

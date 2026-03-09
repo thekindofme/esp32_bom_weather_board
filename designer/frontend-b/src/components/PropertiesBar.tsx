@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLayoutStore } from '../store/layoutStore';
 import { THEME_SWATCHES, DARK_THEME, LIGHT_THEME, type ThemeColorName } from '../utils/themeColors';
-import { DATA_FIELDS, FONT_METRICS } from '../utils/fontMetrics';
+import { DATA_FIELDS, FONT_METRICS, TEXT_SIZE_MAX, TEXT_SIZE_MIN } from '../utils/fontMetrics';
 
 function ColorField({ label, value, onChange, isDark }: { label: string; value: string; onChange: (v: string) => void; isDark: boolean }) {
   const theme = isDark ? DARK_THEME : LIGHT_THEME;
@@ -21,8 +21,13 @@ function ColorField({ label, value, onChange, isDark }: { label: string; value: 
   );
 }
 
+function clampTextSize(value: number): number {
+  if (!Number.isFinite(value)) return TEXT_SIZE_MIN;
+  return Math.max(TEXT_SIZE_MIN, Math.min(TEXT_SIZE_MAX, Math.round(value)));
+}
+
 export const PropertiesBar: React.FC = () => {
-  const { selectedId, layout, propertiesTab, setPropertiesTab, updateElement, updateProp, removeElement, isDarkPreview } = useLayoutStore();
+  const { selectedId, layout, propertiesTab, setPropertiesTab, updateElement, updateProp, removeElement, isDarkPreview, snapToGrid, gridSize } = useLayoutStore();
 
   const el = layout.elements.find(e => e.id === selectedId);
 
@@ -36,6 +41,19 @@ export const PropertiesBar: React.FC = () => {
 
   const p = el.properties as Record<string, unknown>;
   const fontOptions = Object.entries(FONT_METRICS).map(([k, v]) => ({ value: k, label: v.label }));
+  const defaultTextColor = el.type === 'time' || el.type === 'date' ? 'themeGood' : 'themeText';
+  const defaultBgColor = el.type === 'time' || el.type === 'date' ? 'themeHeader' : 'themeBg';
+  const snapCoordinate = (value: number) => {
+    const next = Math.max(0, value);
+    return snapToGrid ? Math.round(next / gridSize) * gridSize : Math.round(next);
+  };
+  const centerElement = (axis: 'horizontal' | 'vertical') => {
+    if (axis === 'horizontal') {
+      updateElement(el.id, { x: snapCoordinate((layout.width - el.width) / 2) }, true);
+      return;
+    }
+    updateElement(el.id, { y: snapCoordinate((layout.height - el.height) / 2) }, true);
+  };
 
   return (
     <div className="properties-bar">
@@ -72,6 +90,10 @@ export const PropertiesBar: React.FC = () => {
                 <label>Z-Index</label>
                 <input type="number" value={el.zIndex} onChange={e => updateElement(el.id, { zIndex: Number(e.target.value) }, true)} />
               </div>
+              <div className="pf-axis-actions">
+                <button className="btn-outline btn-sm" onClick={() => centerElement('horizontal')}>Center H</button>
+                <button className="btn-outline btn-sm" onClick={() => centerElement('vertical')}>Center V</button>
+              </div>
             </div>
         )}
 
@@ -85,17 +107,18 @@ export const PropertiesBar: React.FC = () => {
                     {fontOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
-                {(el.type === 'data-text' || el.type === 'static-text') && (
-                  <div className="pf">
-                    <label>Size</label>
-                    <select value={(p.textSize as number) || 1} onChange={e => updateProp(el.id, 'textSize', Number(e.target.value), true)}>
-                      <option value={1}>1x</option>
-                      <option value={2}>2x</option>
-                    </select>
-                  </div>
-                )}
-                <ColorField label="Color" value={(p.color as string) || 'themeText'} onChange={v => updateProp(el.id, 'color', v, true)} isDark={isDarkPreview} />
-                <ColorField label="Bg" value={(p.bgColor as string) || 'themeBg'} onChange={v => updateProp(el.id, 'bgColor', v, true)} isDark={isDarkPreview} />
+                <div className="pf">
+                  <label>Size</label>
+                  <input
+                    type="number"
+                    value={(p.textSize as number) || 1}
+                    onChange={e => updateProp(el.id, 'textSize', clampTextSize(Number(e.target.value)), true)}
+                    min={TEXT_SIZE_MIN}
+                    max={TEXT_SIZE_MAX}
+                  />
+                </div>
+                <ColorField label="Color" value={(p.color as string) || defaultTextColor} onChange={v => updateProp(el.id, 'color', v, true)} isDark={isDarkPreview} />
+                <ColorField label="Bg" value={(p.bgColor as string) || defaultBgColor} onChange={v => updateProp(el.id, 'bgColor', v, true)} isDark={isDarkPreview} />
               </>
             )}
             {(el.type === 'data-text' || el.type === 'static-text') && (
