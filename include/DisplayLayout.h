@@ -20,8 +20,9 @@ extern const LayoutFunctions layoutRainFirst;
 extern const LayoutFunctions layoutHudGrid;
 extern const LayoutFunctions layoutNightwatch;
 extern const LayoutFunctions layoutNightwatchWide;
-
-#define LAYOUT_COUNT 5
+extern const LayoutFunctions layoutCustomGenerated;
+extern const bool hasGeneratedCustomLayout;
+extern const uint32_t generatedCustomLayoutFingerprint;
 
 // Active layout pointer (managed by main.cpp)
 extern const LayoutFunctions *activeLayout;

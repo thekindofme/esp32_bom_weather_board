@@ -31,20 +31,39 @@ uint32_t lastTouchToggleMs = 0;
 uint32_t touchDownMs = 0;
 
 // Layout cycling
-static const LayoutFunctions *allLayouts[LAYOUT_COUNT] = {
-  &layoutHudGrid,
-  &layoutHeroTemp,
-  &layoutRainFirst,
-  &layoutNightwatch,
-  &layoutNightwatchWide,
-};
+static constexpr uint8_t kMaxLayoutCount = 6;
+static const LayoutFunctions *allLayouts[kMaxLayoutCount] = {};
 const LayoutFunctions *activeLayout = &layoutHudGrid;
 static uint8_t currentLayoutIndex = 0;
+static uint8_t layoutCount = 0;
 static Preferences prefs;
 
 #define LONG_PRESS_MS 800UL
 
 static void animateRefreshTick();
+
+static void initAvailableLayouts() {
+  layoutCount = 0;
+  allLayouts[layoutCount++] = &layoutHudGrid;
+  allLayouts[layoutCount++] = &layoutHeroTemp;
+  allLayouts[layoutCount++] = &layoutRainFirst;
+  allLayouts[layoutCount++] = &layoutNightwatch;
+  allLayouts[layoutCount++] = &layoutNightwatchWide;
+  if (hasGeneratedCustomLayout && layoutCount < kMaxLayoutCount) {
+    allLayouts[layoutCount++] = &layoutCustomGenerated;
+  }
+}
+
+static void selectLayoutByIndex(uint8_t index) {
+  if (layoutCount == 0) {
+    initAvailableLayouts();
+  }
+  if (index >= layoutCount) {
+    index = 0;
+  }
+  currentLayoutIndex = index;
+  activeLayout = allLayouts[currentLayoutIndex];
+}
 
 static bool waitForFtpCode(WiFiClient &control, const char *expectedPrefix, uint32_t timeoutMs, String &response) {
   uint32_t start = millis();
@@ -394,8 +413,8 @@ static void applyLayoutRotation() {
 }
 
 static void cycleLayout() {
-  currentLayoutIndex = (currentLayoutIndex + 1) % LAYOUT_COUNT;
-  activeLayout = allLayouts[currentLayoutIndex];
+  if (layoutCount == 0) return;
+  selectLayoutByIndex((currentLayoutIndex + 1) % layoutCount);
   prefs.putUChar("layout", currentLayoutIndex);
   applyLayoutRotation();
   applyThemeAndRedraw();
@@ -520,10 +539,20 @@ void setup() {
   pinMode(TOUCH_IRQ_PIN, INPUT);
 
   // Restore saved layout from NVS
+  initAvailableLayouts();
   prefs.begin("weather", false);
-  currentLayoutIndex = prefs.getUChar("layout", 0);
-  if (currentLayoutIndex >= LAYOUT_COUNT) currentLayoutIndex = 0;
-  activeLayout = allLayouts[currentLayoutIndex];
+  const uint32_t savedCustomFingerprint = prefs.getUInt("custom_fp", 0);
+  const bool customLayoutChanged =
+      hasGeneratedCustomLayout && savedCustomFingerprint != generatedCustomLayoutFingerprint;
+
+  if (customLayoutChanged) {
+    prefs.putUInt("custom_fp", generatedCustomLayoutFingerprint);
+    const uint8_t customIndex = (layoutCount > 0) ? layoutCount - 1 : 0;
+    prefs.putUChar("layout", customIndex);
+    selectLayoutByIndex(customIndex);
+  } else {
+    selectLayoutByIndex(prefs.getUChar("layout", 0));
+  }
   applyLayoutRotation();
 
   initThemeColors(tft);
